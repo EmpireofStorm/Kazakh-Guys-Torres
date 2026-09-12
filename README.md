@@ -1,2 +1,2 @@
 # Kazakh-Guys-Torres
-AI Tinkerers Hackathon projecgt
+AI Tinkerers Hackathon project
