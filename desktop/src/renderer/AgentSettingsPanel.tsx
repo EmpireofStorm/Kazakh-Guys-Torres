@@ -53,7 +53,7 @@ export function AgentSettingsPanel() {
         setFeedback({
           ok: result.ok,
           message: result.ok
-            ? `Settings saved. ${result.settings.enabled ? 'LangChain agent enabled.' : 'Local rules enabled.'}`
+            ? `Settings saved. ${result.settings.enabled ? 'LangChain agent enabled.' : 'Investigation agent enabled.'}`
             : result.error || 'Could not save agent settings.'
         })
       }
@@ -77,7 +77,7 @@ export function AgentSettingsPanel() {
         During monitoring, the agent sends score summaries to this endpoint.
       </p>
       <p className="settings-help">
-        Saved configuration: {saved ? saved.enabled ? `LangChain · ${saved.model}` : 'Local rules' : pending === 'load' && !bridgeMissing ? 'Loading…' : 'Unavailable'}
+        Saved configuration: {saved ? saved.enabled ? `LangChain · ${saved.model}` : 'Investigation' : pending === 'load' && !bridgeMissing ? 'Loading…' : 'Unavailable'}
       </p>
       <form onSubmit={(event) => void submit(event)}>
         <fieldset disabled={pending !== null || bridgeMissing}>

@@ -64,15 +64,20 @@ export class AgentSettingsStore {
         }
         this.config = { enabled: parsed.enabled && !!baseUrl && !!parsed.model, baseUrl, model: parsed.model, apiKey }
       } else {
-        // An API key alone must never activate an implicit provider endpoint.
         const useSentinelNames = !!env.SENTINEL_LLM_BASE_URL?.trim()
-        const baseUrl = normalizeBaseUrl((useSentinelNames ? env.SENTINEL_LLM_BASE_URL : env.OPENAI_BASE_URL)?.trim() || '')
-        const model = (useSentinelNames ? env.SENTINEL_LLM_MODEL : env.OPENAI_MODEL)?.trim() || ''
+        const apiKey = (useSentinelNames ? env.SENTINEL_LLM_API_KEY : env.OPENAI_API_KEY)?.trim() || ''
+        const defaultOpenAi = !useSentinelNames && !!apiKey
+        const baseUrl = normalizeBaseUrl(
+          (useSentinelNames ? env.SENTINEL_LLM_BASE_URL : env.OPENAI_BASE_URL)?.trim()
+          || (defaultOpenAi ? 'https://api.openai.com/v1' : '')
+        )
+        const model = (useSentinelNames ? env.SENTINEL_LLM_MODEL : env.OPENAI_MODEL)?.trim()
+          || (defaultOpenAi ? 'gpt-4o' : '')
         this.config = {
           enabled: !!baseUrl && !!model,
           baseUrl,
           model,
-          apiKey: baseUrl ? (useSentinelNames ? env.SENTINEL_LLM_API_KEY : env.OPENAI_API_KEY)?.trim() || '' : ''
+          apiKey: baseUrl ? apiKey : ''
         }
       }
     } catch {

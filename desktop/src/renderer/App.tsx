@@ -269,11 +269,7 @@ export function App() {
           <div>
             <dt>Agent</dt>
             <dd>
-              {state.demoScenario === 'live'
-                ? state.agentMode === 'langchain'
-                  ? 'LangChain · live detector'
-                  : 'Local rules · live detector'
-                : 'Presenter script'}
+              {state.agentMode === 'langchain' ? 'LangChain' : 'Investigation'}
               {state.agentBusy ? ' · investigating' : ''}
             </dd>
           </div>
@@ -286,7 +282,7 @@ export function App() {
               ? 'Investigation in progress…'
               : monitoring
                 ? 'Watching for new evidence.'
-                : 'Start monitoring or use a presenter shortcut.'}
+                : 'Start monitoring to begin.'}
           </p>
           {state.agentActivity.length > 0 && (
             <ol className="activity-log" aria-label="Recent agent actions">

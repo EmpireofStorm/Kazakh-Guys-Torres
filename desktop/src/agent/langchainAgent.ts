@@ -104,7 +104,7 @@ export async function runSentinelDecision(
 
   if (!options.config) return fallback('No agent endpoint configured. Using local evidence rules.')
   if (!shouldInvokeAgent(snapshot) && snapshot.scores && snapshot.scores.mean < 0.35) {
-    return fallback('Scores are stable and low. Local rules continue monitoring.')
+    return fallback('Scores are stable and low. Investigation continues.')
   }
 
   try {

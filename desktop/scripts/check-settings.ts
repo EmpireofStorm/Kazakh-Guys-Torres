@@ -14,9 +14,10 @@ const secrets = {
 }
 
 try {
-  const store = new AgentSettingsStore(path, secrets, { OPENAI_API_KEY: 'must-not-be-used-without-an-explicit-url' })
-  assert.equal(store.getConfig(), null)
-  assert.equal(store.getPublic().hasApiKey, false)
+  const store = new AgentSettingsStore(path, secrets, { OPENAI_API_KEY: 'key-only-uses-openai-defaults' })
+  assert.equal(store.getConfig()?.baseUrl, 'https://api.openai.com/v1')
+  assert.equal(store.getConfig()?.model, 'gpt-4o')
+  assert.equal(store.getConfig()?.apiKey, 'key-only-uses-openai-defaults')
   const isolated = new AgentSettingsStore(join(directory, 'env-isolation.json'), secrets, {
     SENTINEL_LLM_BASE_URL: 'http://localhost:11434/v1',
     SENTINEL_LLM_MODEL: 'local-tool-model',
