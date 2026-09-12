@@ -1,0 +1,9 @@
+{
+  "name": "kazakh-guys-torres",
+  "private": true,
+  "description": "SENTINEL hackathon submission (Kazakh-Guys-Torres)",
+  "scripts": {
+    "dev": "npm run dev --prefix desktop",
+    "install:desktop": "npm install --prefix desktop"
+  }
+}

@@ -1,0 +1,16 @@
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+node_modules/
+desktop/node_modules/
+desktop/out/
+desktop/dist/
+desktop/.vite/
+.idea/
+.idea/
+.vscode/
+detector/.venv/
+detector/__pycache__/
+*.pyc
