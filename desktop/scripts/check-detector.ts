@@ -10,14 +10,15 @@ async function main() {
   const directory = await mkdtemp(join(tmpdir(), 'sentinel-media-check-'))
   const path = join(directory, 'chosen.mp4')
   const previous = process.env.DETECTOR_URL
-  const expected = { videoRisk: .2, voiceRisk: .8, framesSampled: 3, facesFound: 2, voiceSeconds: 4, errors: {}, calibrated: false }
+  const generatedFrameEvidence = { model: 'CommunityForensics', meanScore: .4, flaggedFrames: 1, sampledFrames: 3, threshold: .5 }
+  const expected = { videoRisk: .2, voiceRisk: .8, framesSampled: 3, facesFound: 2, voiceSeconds: 4, generatedFrameEvidence, errors: {}, calibrated: false }
   let receivedSlow!: () => void
   const slowRequest = new Promise<void>((resolve) => { receivedSlow = resolve })
   let multipart = ''
   let acknowledgeAdditional = true
   const service = createServer(async (request, response) => {
     if (request.url === '/health') {
-      response.end(JSON.stringify({ backend: 'UCF+AASIST3', videoLoaded: true, audioLoaded: false, audioWeightsPresent: true }))
+      response.end(JSON.stringify({ backend: 'UCF+CommunityForensics+AASIST3', videoLoaded: true, audioLoaded: false, audioWeightsPresent: true, generatedVideoLoaded: false, generatedVideoWeightsPresent: true }))
     } else if (request.url === '/analyze/media') {
       for await (const chunk of request) multipart += chunk.toString()
       response.end(JSON.stringify(acknowledgeAdditional && multipart.includes('name="additionalEvidence"')
@@ -37,6 +38,7 @@ async function main() {
     const health = await checkDetectorHealth()
     assert.equal(health.videoReady, true)
     assert.equal(health.voiceReady, true)
+    assert.equal(health.generatedVideoReady, true)
     assert.deepEqual(await analyzeMediaFile(path, new AbortController().signal), expected)
     assert.match(multipart, /name="file"; filename="chosen.mp4"/)
     assert.match(multipart, /selected-media-bytes/)
@@ -50,6 +52,9 @@ async function main() {
     assert.equal(mediaAnalysisSchema.safeParse({ ...expected, facesFound: 0 }).success, false)
     assert.equal(mediaAnalysisSchema.safeParse({ ...expected, voiceSeconds: null }).success, false)
     assert.equal(mediaAnalysisSchema.safeParse({ ...expected, videoRisk: null, facesFound: 0 }).success, true)
+    assert.equal(mediaAnalysisSchema.safeParse({ ...expected, generatedFrameEvidence: { ...generatedFrameEvidence, flaggedFrames: 4 } }).success, false)
+    assert.equal(mediaAnalysisSchema.safeParse({ ...expected, generatedFrameEvidence: { ...generatedFrameEvidence, sampledFrames: 4 } }).success, false)
+    assert.equal(mediaAnalysisSchema.safeParse({ ...expected, generatedFrameEvidence: { ...generatedFrameEvidence, meanScore: 1.1 } }).success, false)
 
     const controller = new AbortController()
     process.env.DETECTOR_URL = `${base}/slow/analyze`

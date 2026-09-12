@@ -21,10 +21,23 @@ The finalization gate gathers genuinely additional evidence when coverage is low
 Use gather_attachment_evidence for one additional pass through new frame positions and a later audio window; repeating analyze_attachment is not additional evidence.
 Reuse prior reports for follow-ups. Do not pretend another pass can reveal an absent channel or unavailable later window.
 When finalize_assessment returns approved:false, inspect its new evidence and finalize again. Do not give a final verdict first.
-When it returns uncertain:true, explicitly say evidence is insufficient for a reliable verdict, describe remaining gaps, and suggest independent verification. Never force a verdict after exhausting evidence.
+When it returns uncertain:true, keep overall authenticity uncertainty separate from independent channel findings. Lead with any strong detector warning in its findings, then describe remaining gaps. Never force a verdict after exhausting evidence.
+The application preserves factual detector warnings before your answer. Do not contradict or dismiss those findings, or relabel a flagged channel as low concern because another channel scored lower.
 You cannot start capture, open arbitrary paths, access other files, or take action outside the app.
 Keep video and voice scores separate. Unavailable evidence never means low risk.
 Scores are uncalibrated classifier outputs, not probabilities that a person is fake. Never claim certainty or accuse anyone.
+Interpret each score within the named detector's scope. A low UCF score does not establish that a video is genuine: UCF targets face manipulation and may miss modern fully generated video.
+Describe a low UCF result as a low score from that detector, never as overall video authenticity, a safety clearance, or evidence against full-scene generation.
+When generatedFrameEvidence is present, CommunityForensics supplies separate experimental generated-frame evidence; it does not replace UCF face-manipulation evidence.
+Report its exact flaggedFrames out of sampledFrames, the reported threshold of 0.5, and meanScore for each pass. That threshold classifies individual images; frame aggregation is experimental.
+Never convert the flagged-frame fraction or meanScore into a probability that the video is generated, or claim the entire video is generated from those values.
+Some flagged and some unflagged frames are mixed visual evidence even when the mean is below 0.5. Zero flagged sampled frames does not establish authentic video. Keep initial and additional counts separate, and explain incomplete or failed generated-frame analysis.
+A strong audio anti-spoofing score is an independent warning that remains relevant when video scores are low. Report the audio flag prominently; low video scores do not cancel it.
+Disagreement limits an overall authenticity conclusion; it does not erase evidence from either channel. A single audio score alone cannot prove that the entire video was generated.
+Do not invent detector behavior such as short clips causing high scores, unusual scores, or a need for visual corroboration before acknowledging an audio warning.
+Use mediaDurationSeconds with voiceStartSeconds and voiceSeconds from each report to describe actual audio coverage. Combine only non-overlapping analyzed intervals; never count repeated passes twice.
+If the analyzed intervals cover the available clip, say that the available audio was covered. Do not call it thin or incomplete solely because the clip is short, or require a longer version that is not available.
+If duration or interval metadata is absent, say coverage is unknown rather than inventing a duration or claiming complete coverage. More or independent source evidence can still be suggested without dismissing the evidence already returned.
 Scores cannot reveal blinking, lip sync, visual artifacts, or how a voice sounds. Never invent such observations.
 Combined scoring is a separate explicit UI action. Do not compute or invent a combined score.
 Tool errors mean unavailable evidence. Correct requests or explain the gap; never invent success.
@@ -35,10 +48,14 @@ You receive score summaries only; media stays with the detector. Do not claim yo
 
 class ChatToolError extends Error {}
 // ponytail: fixed review heuristics, not calibrated confidence; tune against validated media before deployment.
-const ambiguous = (score: number) => score >= 0.35 && score <= 0.75
+const HIGH_SCORE = 0.75
+const ambiguous = (score: number) => score >= 0.35 && score <= HIGH_SCORE
 function uncertainMedia(result: MediaAnalysis): boolean {
+  const generated = result.generatedFrameEvidence
+  const incompleteOrMixed = generated && (generated.sampledFrames === 0 || generated.sampledFrames < result.framesSampled
+    || (generated.flaggedFrames > 0 && generated.flaggedFrames < generated.sampledFrames))
   return result.videoRisk === null || result.voiceRisk === null || result.facesFound < 3 || result.framesSampled < 3
-    || (result.voiceSeconds ?? 0) < 1 || !!result.errors.video || !!result.errors.audio
+    || (result.voiceSeconds ?? 0) < 1 || !!result.errors.video || !!result.errors.audio || !!result.errors.generatedVideo || !!incompleteOrMixed
     || ambiguous(result.videoRisk) || ambiguous(result.voiceRisk) || Math.abs(result.videoRisk - result.voiceRisk) >= 0.35
 }
 function uncertainLive(value: unknown): boolean {
@@ -86,6 +103,7 @@ export async function runChatTurn(options: {
   let liveEvidence: unknown
   let finalized = false
   let finalUncertain = false
+  let finalPrefix = ''
   let streamFinal = false
   const attempts = new Map<string, number>()
   const touched = new Set<string>()
@@ -93,6 +111,7 @@ export async function runChatTurn(options: {
   const failedAdditional = new Set<string>()
   const conflictingPasses = new Set<string>()
   const reports = new Map<string, ChatAnalysis>()
+  const reportHistory: ChatAnalysis[] = []
   const used = new Set<string>()
   const attachments = options.attachments.map(({ id, name, size }) => ({ id, name, size }))
   const allowed = new Map(attachments.map(attachment => [attachment.id, attachment]))
@@ -105,9 +124,10 @@ export async function runChatTurn(options: {
   }
   const modelReport = (analysis: ChatAnalysis): ChatAnalysis => {
     const report = analysisData(analysis)
-    for (const channel of ['video', 'audio'] as const) {
+    for (const channel of ['video', 'audio', 'generatedVideo'] as const) {
       const error = report.result.errors[channel]
-      if (error && !PUBLIC_DETECTOR_ERRORS.has(error)) report.result.errors[channel] = `${channel === 'video' ? 'Video' : 'Voice'} analysis reported an error; evidence may be incomplete.`
+      const label = channel === 'audio' ? 'Voice' : channel === 'generatedVideo' ? 'Generated-frame' : 'Video'
+      if (error && !PUBLIC_DETECTOR_ERRORS.has(error)) report.result.errors[channel] = `${label} analysis reported an error; evidence may be incomplete.`
     }
     return report
   }
@@ -119,6 +139,7 @@ export async function runChatTurn(options: {
       if (before != null && after != null && Math.abs(before - after) >= 0.35) conflictingPasses.add(report.attachmentId)
     }
     reports.set(report.attachmentId, report)
+    reportHistory.push(report)
   }
   const labels: Record<string, { running: string; complete: string; error: string }> = {
     get_live_evidence: { running: 'Reading recent live evidence.', complete: 'Read recent live score summaries.', error: 'Live evidence is unavailable. Check the Live view before retrying.' },
@@ -224,8 +245,38 @@ export async function runChatTurn(options: {
     finalUncertain = (used.size > 0 || liveRelevant) && (args.uncertain
       || [...used].some(id => failedAdditional.has(id) || conflictingPasses.has(id) || !reports.has(id) || uncertainMedia(reports.get(id)!.result))
       || (liveRelevant && (liveSamplingFailed || uncertainLive(liveEvidence))))
+    const findings = reportHistory.filter(report => used.has(report.attachmentId)).flatMap(report => {
+      const pass = report.result.additionalEvidence ? 'additional' : 'initial'
+      return (['audio', 'video'] as const).flatMap(channel => {
+        const score = channel === 'audio' ? report.result.voiceRisk : report.result.videoRisk
+        return score === null ? [] : [{
+          attachmentId: report.attachmentId, fileName: report.fileName, channel,
+          detector: channel === 'audio' ? 'AASIST3' : 'UCF', pass, score, strongScore: score >= HIGH_SCORE
+        }]
+      })
+    })
+    const generatedFrameFindings = reportHistory.filter(report => used.has(report.attachmentId)).flatMap(report =>
+      report.result.generatedFrameEvidence ? [{
+        attachmentId: report.attachmentId, fileName: report.fileName,
+        pass: report.result.additionalEvidence ? 'additional' : 'initial',
+        ...report.result.generatedFrameEvidence, aggregation: 'experimental'
+      }] : [])
+    // Preserve the strongest observed warning per channel, including an earlier pass; never combine channels.
+    const warnings = new Map<string, typeof findings[number]>()
+    for (const finding of findings) {
+      const key = `${finding.attachmentId}:${finding.channel}`
+      if (finding.strongScore && finding.score > (warnings.get(key)?.score ?? -1)) warnings.set(key, finding)
+    }
+    if (warnings.size) {
+      const lines = [...warnings.values()].map(finding => `${finding.channel === 'audio' ? 'Audio' : 'Video'} warning: ${finding.detector} scored ${finding.score.toFixed(6)} for ${JSON.stringify(finding.fileName)} in the ${finding.pass} pass.`)
+      if ([...warnings.values()].some(finding => finding.channel === 'audio')) lines.push('The audio flag is independent; low video scores do not cancel it.')
+      lines.push('These are uncalibrated detector outputs, not proof that the entire video is synthetic.')
+      if (finalUncertain) lines.push('Overall authenticity remains uncertain.')
+      if (findings.some(finding => finding.detector === 'UCF' && finding.score < 0.35)) lines.push('Low UCF scores do not establish that a video is genuine.')
+      finalPrefix = `${lines.join('\n')}\n\n`
+    } else if (finalUncertain) finalPrefix = 'Evidence is insufficient for a reliable authenticity verdict.\n\n'
     finalized = true
-    return { approved: true, uncertain: finalUncertain, instruction: finalUncertain ? 'Evidence is insufficient for a reliable authenticity verdict. Explain the remaining gaps and independent verification; never force a verdict.' : 'Answer using the reviewed evidence. Scores remain uncalibrated and cannot establish certainty.' }
+    return { approved: true, uncertain: finalUncertain, findings, generatedFrameFindings, instruction: 'Report strong channel findings independently and do not dismiss them because another score is low. Describe generated-frame counts as separate experimental evidence, never a video probability. Keep overall uncertainty separate. Scores are uncalibrated and cannot establish whether the entire video is synthetic.' }
   }
   try {
     for (const item of options.previousAnalyses.filter(item => allowed.has(item.attachmentId))) {
@@ -286,8 +337,8 @@ export async function runChatTurn(options: {
       signal, recursionLimit: 34,
       callbacks: [{ handleLLMNewToken: (delta: string) => {
         if (signal.aborted || !streamFinal || !delta) return
-        if (!answer && finalUncertain) {
-          answer = 'Evidence is insufficient for a reliable authenticity verdict.\n\n'
+        if (!answer && finalPrefix) {
+          answer = finalPrefix
           options.onText(answer)
         }
         answer += delta

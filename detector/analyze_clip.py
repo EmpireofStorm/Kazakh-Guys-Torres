@@ -16,21 +16,27 @@ def main():
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--frames", type=int, default=8)
     parser.add_argument("--video-only", action="store_true")
+    parser.add_argument("--additional-evidence", action="store_true", help="Use new frame positions and the next audio window")
     parser.add_argument("--combine", action="store_true", help="Explicitly request noisy-OR fusion")
     args = parser.parse_args()
     if not 1 <= args.frames <= 100 or args.combine and args.video_only:
         parser.error("Choose 1-100 frames, and both models for --combine")
 
-    @lru_cache(maxsize=2)
+    @lru_cache(maxsize=3)
     def detector(kind):
         if kind == "video":
             from video import VideoDetector
             return VideoDetector(args.models_dir, args.device)
+        if kind == "generatedVideo":
+            from generated_image import GeneratedImageDetector
+            return GeneratedImageDetector(args.models_dir, args.device)
         from audio import AudioDetector
         return AudioDetector(args.models_dir, args.device)
 
     result = analyze_media(args.file, lambda image: detector("video").analyze(image),
-                           None if args.video_only else lambda wave, sr: detector("audio").analyze(wave, sr), args.frames)
+                           None if args.video_only else lambda wave, sr: detector("audio").analyze(wave, sr), args.frames,
+                           additional_evidence=args.additional_evidence,
+                           generated_image=lambda image: detector("generatedVideo").analyze(image))
     if args.combine:
         if result["videoRisk"] is None or result["voiceRisk"] is None:
             result["errors"]["combine"] = "Both channels need evidence before combining"

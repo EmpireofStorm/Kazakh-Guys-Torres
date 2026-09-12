@@ -24,6 +24,7 @@ def check_additional_evidence(client):
     class AudioWindows:
         def analyze(self, waveform, sample_rate):
             assert sample_rate == SAMPLE_RATE
+            assert np.isfinite(waveform).all() and np.max(np.abs(waveform)) <= 1
             windows.append(waveform.copy())
             return .2
 
@@ -69,6 +70,12 @@ def check_additional_evidence(client):
             assert partial["voiceRisk"] == .2 and abs(partial["voiceSeconds"] - (5.5 - 4.0375)) < 1e-6
             invalid = client.post("/analyze/media", files={"file": (wav.name, wav.read_bytes())}, data={"additionalEvidence": "invalid"})
             assert invalid.status_code == 422
+            # Float audio decoders can overshoot full scale, as the LTX AAC clip does.
+            sf.write(wav, np.r_[np.full(8000, 1.06), np.full(8000, -1.04)], SAMPLE_RATE, subtype="FLOAT")
+            bounded = upload(wav)
+            assert bounded["voiceRisk"] == .2, bounded
+            np.testing.assert_allclose(windows[-1][:8000], 1)
+            np.testing.assert_allclose(windows[-1][8000:], -1)
     finally:
         server.models["audio"] = original_audio
 
@@ -90,6 +97,11 @@ def main():
                 assert image.shape == (64, 64, 3) and image.dtype == np.uint8
                 return {"deepfakeProbability": .8, "faceDetected": True, "model": "test"}
         server.models["video"] = Video()
+        class GeneratedImage:
+            def analyze(self, image):
+                assert image.shape == (64, 64, 3) and image.dtype == np.uint8
+                return .6
+        server.models["generatedVideo"] = GeneratedImage()
         assert client.post("/analyze", json=payload).json()["deepfakeProbability"] == .8
         with server.model_lock:
             assert client.post("/analyze", json=payload).status_code == 503
@@ -127,6 +139,8 @@ def main():
             both = upload_clip()
             assert both["videoRisk"] == .8 and both["voiceRisk"] == .2 and both["errors"] == {}
             assert both["framesSampled"] == both["facesFound"] == 4
+            assert both["generatedFrameEvidence"] == {"model": "CommunityForensics", "meanScore": .6,
+                                                      "flaggedFrames": 4, "sampledFrames": 4, "threshold": .5}
             assert "combinedRisk" not in both, "Combining must remain an explicit action"
 
             class Unavailable:
@@ -136,8 +150,26 @@ def main():
             server.models["video"] = Unavailable()
             failed_video = upload_clip()
             assert failed_video["videoRisk"] is None and failed_video["voiceRisk"] == .2
+            assert failed_video["generatedFrameEvidence"]["sampledFrames"] == 4, "Generated-frame inference must survive UCF failure"
             assert "video" in failed_video["errors"]
+            class NoFace:
+                def analyze(self, image):
+                    return {"deepfakeProbability": 0.0, "faceDetected": False, "model": "test"}
+            server.models["video"] = NoFace()
+            faceless = upload_clip()
+            assert faceless["facesFound"] == 0 and faceless["videoRisk"] is None
+            assert faceless["generatedFrameEvidence"]["flaggedFrames"] == 4
             server.models["video"] = Video()
+            server.models["generatedVideo"] = Unavailable()
+            failed_generated = upload_clip()
+            assert failed_generated["videoRisk"] == .8 and failed_generated["voiceRisk"] == .2
+            assert failed_generated["generatedFrameEvidence"] is None and "generatedVideo" in failed_generated["errors"]
+            class InvalidGenerated:
+                def analyze(self, image):
+                    return float('nan')
+            server.models["generatedVideo"] = InvalidGenerated()
+            assert upload_clip()["generatedFrameEvidence"] is None
+            server.models["generatedVideo"] = GeneratedImage()
             server.models["audio"] = Unavailable()
             failed_audio = upload_clip()
             assert failed_audio["voiceRisk"] is None and failed_audio["videoRisk"] == .8
@@ -150,6 +182,22 @@ def main():
             video_only = upload_clip(no_audio)
             assert video_only["voiceRisk"] is None and video_only["videoRisk"] == .8
             assert video_only["errors"]["audio"] == "No audio stream"
+            # Preserve CF's official preprocessing: only UCF receives the CPU size cap.
+            wide = Path(directory) / "wide.mkv"
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=2560x64:r=1:d=1",
+                            "-c:v", "ffv1", str(wide)], check=True, timeout=15)
+            class WideVideo:
+                def analyze(self, image):
+                    assert image.shape == (32, 1280, 3)
+                    return {"deepfakeProbability": .8, "faceDetected": True, "model": "test"}
+            class WideGenerated:
+                def analyze(self, image):
+                    assert image.shape == (64, 2560, 3)
+                    return .6
+            server.models["video"], server.models["generatedVideo"] = WideVideo(), WideGenerated()
+            wide_result = upload_clip(wide)
+            assert wide_result["videoRisk"] == .8 and wide_result["generatedFrameEvidence"]["meanScore"] == .6
+            server.models["video"], server.models["generatedVideo"] = Video(), GeneratedImage()
         check_additional_evidence(client)
         assert client.post("/analyze/media", files={"file": ("bad.mp4", b"invalid")}).status_code == 422
         assert client.post("/analyze/media", files={"file": ("empty.wav", b"")}).status_code == 422

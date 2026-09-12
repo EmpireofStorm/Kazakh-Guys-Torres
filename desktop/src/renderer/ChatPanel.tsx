@@ -259,24 +259,27 @@ function AnalysisCard({ analysis }: { analysis: ChatAnalysis }) {
     <section className="chat-analysis" aria-label={`Detector results for ${analysis.fileName}`}>
       <header><strong>{result.additionalEvidence ? 'Additional evidence' : 'Detector results'}</strong><span title={analysis.fileName}>{analysis.fileName}</span></header>
       <div className="analysis-scores">
-        {([['Video', result.videoRisk], ['Voice', result.voiceRisk]] as const).map(([label, score]) => (
+        {([['Face manipulation · UCF', result.videoRisk], ['Voice spoofing · AASIST3', result.voiceRisk]] as const).map(([label, score]) => (
           <div key={label}>
-            <span>{label} risk score</span>
+            <span>{label}</span>
             <strong>{score === null ? 'Unavailable' : score.toFixed(3)}</strong>
             <div className="risk-track" aria-hidden="true"><span className={score !== null && score > .75 ? 'high' : score !== null && score >= .3 ? 'medium' : ''} style={{ width: `${(score ?? 0) * 100}%` }} /></div>
           </div>
         ))}
       </div>
+      {result.generatedFrameEvidence && <p className="analysis-detail"><strong>Generated-frame check · Community Forensics: {result.generatedFrameEvidence.flaggedFrames}/{result.generatedFrameEvidence.sampledFrames} frames flagged</strong> · mean {result.generatedFrameEvidence.meanScore.toFixed(3)}. Frame threshold 0.5; experimental video summary.</p>}
       <p className="analysis-detail">{result.facesFound}/{result.framesSampled} face samples · {result.voiceSeconds === null ? 'Voice unavailable' : `${result.voiceSeconds.toFixed(1)}s voice from ${(result.voiceStartSeconds ?? 0).toFixed(1)}s`}</p>
+      {result.mediaDurationSeconds !== undefined && <p className="analysis-detail">Clip length: {result.mediaDurationSeconds.toFixed(1)}s</p>}
       {result.errors.video && <p className="analysis-detail">Video: {result.errors.video}</p>}
       {result.errors.audio && <p className="analysis-detail">Voice: {result.errors.audio}</p>}
+      {result.errors.generatedVideo && <p className="analysis-detail">Generated-frame check: {result.errors.generatedVideo}</p>}
       <div className="analysis-combine">
         <button type="button" disabled={result.videoRisk === null || result.voiceRisk === null} onClick={() => {
           if (result.videoRisk !== null && result.voiceRisk !== null) setCombined(1 - (1 - result.videoRisk) * (1 - result.voiceRisk))
         }}>Combine scores</button>
         {combined !== null && <span role="status">{combined.toFixed(3)} · {combined > .75 ? 'High' : combined >= .3 ? 'Medium' : 'Low'} tier</span>}
       </div>
-      <p className="analysis-caveat">Uncalibrated model scores. Combined only on request using noisy-OR; low scores do not prove authenticity.</p>
+      <p className="analysis-caveat">Uncalibrated model scores. UCF can miss fully generated video; a low face score does not clear the video or cancel a voice warning. Combine only on request using noisy-OR.</p>
     </section>
   )
 }

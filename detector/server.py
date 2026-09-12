@@ -36,9 +36,14 @@ def get_model(kind: str):
         if kind == "video":
             from video import VideoDetector
             models[kind] = VideoDetector(MODELS_DIR, DEVICE)
-        else:
+        elif kind == "generatedVideo":
+            from generated_image import GeneratedImageDetector
+            models[kind] = GeneratedImageDetector(MODELS_DIR, DEVICE)
+        elif kind == "audio":
             from audio import AudioDetector
             models[kind] = AudioDetector(MODELS_DIR, DEVICE)
+        else:
+            raise ValueError("Unknown detector")
     return models[kind]
 
 
@@ -155,10 +160,12 @@ def infer(kind: str, *inputs):
 @app.get("/health")
 def health():
     return {
-        "status": "ok", "backend": "UCF+AASIST3", "device": DEVICE,
+        "status": "ok", "backend": "UCF+CommunityForensics+AASIST3", "device": DEVICE,
         "videoLoaded": "video" in models,
         "audioLoaded": "audio" in models and models["audio"].model is not None,
         "audioWeightsPresent": (MODELS_DIR / "aasist3-weights/model.safetensors").is_file(),
+        "generatedVideoLoaded": "generatedVideo" in models,
+        "generatedVideoWeightsPresent": (MODELS_DIR / "community-forensics/community-forensics.safetensors").is_file(),
     }
 
 
@@ -196,7 +203,7 @@ async def analyze_upload(file: UploadFile, additional_evidence: bool = Form(Fals
                     output.write(chunk)
             return await run_in_threadpool(analyze_media, path,
                 lambda frame: infer("video", frame), lambda wave, rate: infer("audio", wave, rate),
-                additional_evidence=additional_evidence)
+                additional_evidence=additional_evidence, generated_image=lambda frame: infer("generatedVideo", frame))
     except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as error:
         raise HTTPException(422, "Could not decode media; use a video or audio file up to five minutes") from error
     finally:

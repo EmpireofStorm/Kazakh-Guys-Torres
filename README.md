@@ -22,7 +22,7 @@ For real media analysis, also start the Python service from the repo root:
 detector/.venv/bin/python -m uvicorn server:app --app-dir detector --host 127.0.0.1 --port 8000
 ```
 
-Both pretrained models and dependencies are installed on this development
+All three pretrained models and dependencies are installed on this development
 machine. For a fresh checkout, follow [detector setup](detector/README.md).
 
 ## Agent chat
@@ -38,7 +38,7 @@ A LangChain agent chooses tools, reads their results, and continues the
 conversation. It can:
 
 - Read detector readiness and current live statistics.
-- Run UCF and AASIST3 on files you attached to this conversation.
+- Run UCF, Community Forensics and AASIST3 on files you attached to this conversation.
 - Gather a second set of distinct video frames and a later audio segment when
   the first result is uncertain, incomplete, or inconsistent.
 - Request a bounded sampling window while monitoring is already active,

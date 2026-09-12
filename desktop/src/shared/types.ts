@@ -22,6 +22,7 @@ export interface DetectorHealth {
   reachable: boolean
   videoReady: boolean
   voiceReady: boolean
+  generatedVideoReady?: boolean
   message: string
 }
 
@@ -31,9 +32,17 @@ export interface MediaAnalysis {
   framesSampled: number
   facesFound: number
   voiceSeconds: number | null
+  mediaDurationSeconds?: number
   additionalEvidence?: boolean
   voiceStartSeconds?: number
-  errors: { video?: string; audio?: string }
+  generatedFrameEvidence?: {
+    model: 'CommunityForensics'
+    meanScore: number
+    flaggedFrames: number
+    sampledFrames: number
+    threshold: 0.5
+  } | null
+  errors: { video?: string; audio?: string; generatedVideo?: string }
   calibrated: false
 }
 

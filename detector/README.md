@@ -1,6 +1,7 @@
 # Local detector
 
-UCF analyzes faces. AASIST3 analyzes voice. Electron chat and live monitoring call
+UCF analyzes faces. Community Forensics checks generated-image signals in
+uploaded video frames. AASIST3 analyzes voice. Electron chat and live monitoring call
 this same local FastAPI service. No inference request downloads a model or
 sends media to an LLM provider.
 
@@ -23,12 +24,12 @@ python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
 In PowerShell, activate with `.venv\Scripts\Activate.ps1` instead.
-Model downloads total about 1.5 GB. Models, source snapshots and the virtual
-environment are gitignored. `setup_models.py --video` or `--audio` installs
+Model downloads total about 1.7 GB. Models, source snapshots and the virtual
+environment are gitignored. `setup_models.py --video`, `--audio`, or `--generated-images` installs
 one detector. Re-running setup verifies cached downloads; checkpoint SHA256
 values are pinned in the script. Restart the service after changing assets.
 
-On this development machine, dependencies and both models are already installed.
+On this development machine, dependencies and all three models are already installed.
 Start the service from the repo root with:
 
 ```bash
@@ -36,8 +37,8 @@ detector/.venv/bin/python -m uvicorn server:app --app-dir detector --host 127.0.
 ```
 
 `SENTINEL_MODELS_DIR` overrides the models folder and `SENTINEL_DEVICE`
-selects the PyTorch device, default `cpu`. UCF loads at startup. AASIST3
-loads on its first request. Use one service worker to avoid duplicating
+selects the PyTorch device, default `cpu`. UCF loads at startup. AASIST3 and
+Community Forensics load on their first request. Use one service worker to avoid duplicating
 large models in memory. Concurrent model work receives a busy error instead
 of queuing stale meeting frames.
 
@@ -46,7 +47,7 @@ of queuing stale meeting frames.
 Electron's **Real detector** mode uses `http://127.0.0.1:8000/analyze` by
 default. `DETECTOR_URL` overrides the frame URL; health and file-analysis URLs
 use the same service prefix. The scripted demo always uses simulated scores.
-Uploaded files exercise both models. Live capture currently analyzes video;
+Uploaded files exercise all three models. Live capture currently uses UCF;
 live meeting audio capture is not connected.
 
 In Chat, attach media and ask the agent to analyze it. Its tools call
@@ -57,6 +58,7 @@ and filenames; the raw media stays on this detector path.
 ## API
 
 - `GET /health`: service status, device, loaded-model flags and audio-weight presence.
+  Includes `generatedVideoLoaded` and `generatedVideoWeightsPresent`.
 - `POST /analyze`: JSON `{ "jpegBase64": "...", "capturedAt": 1710000000000 }`.
   Returns `deepfakeProbability`, `faceDetected`, and `model`. Raw JPEG base64
   only, maximum 8 MiB encoded and 16 megapixels. No face means evidence is
@@ -67,15 +69,24 @@ and filenames; the raw media stays on this detector path.
 - `POST /analyze/media`: multipart field `file`, maximum 100 MiB and five
   minutes. Supports MP4/MOV, WebM/MKV, WAV, FLAC, MP3, Ogg, AAC and M4A.
   Samples eight video frames and analyzes the first 4.0375 seconds of audio.
-  Returns separate `videoRisk` and `voiceRisk`, sample counts, frame results,
+  Returns separate `videoRisk` and `voiceRisk`, `mediaDurationSeconds`, sample counts, frame results,
   and channel `errors`. Missing or failed channels have a null score.
+  `generatedFrameEvidence` separately reports the Community Forensics mean,
+  sampled-frame count, and number at or above its published 0.5 image threshold.
+  This summary does not replace UCF's `videoRisk` or enter noisy-OR fusion.
+  It works without a detected face. Missing assets produce a null summary and
+  `errors.generatedVideo`, preserving the other detectors.
   Set multipart `additionalEvidence=true` for a second pass with up to 16
   different frame timestamps and the next audio window, starting at 4.0375
   seconds. Previously sampled frames and audio are never reused. A short
   video can have fewer new frames or none; fewer than one second of remaining
   audio returns null voice risk and a reason. Successful shorter audio tails
   use the model's repeat-padding. This pass adds `additionalEvidence: true`
-  and `voiceStartSeconds: 4.0375` to the report.
+  and `voiceStartSeconds: 4.0375` to the report. Use each window's start and
+  analyzed duration to account for coverage; short clips may be covered by
+  the two passes. Floating-point AAC/MP3 decoding is clipped to PCM full
+  scale before inference, matching bounded playback and avoiding rejection
+  of finite decoder overshoots.
 - `POST /combine`: explicit JSON `{ "voiceRisk": 0.6, "videoRisk": 0.5 }`.
   Returns noisy-OR `combinedRisk` of 0.8 and an uncalibrated risk tier.
   No analysis endpoint automatically combines scores.
@@ -113,6 +124,12 @@ python analyze_clip.py '../deepfake videos/vasa1_synthetic_speaker_09.mp4'
   Audio becomes mono 16 kHz, receives 0.97 pre-emphasis, then repeats or
   trims to exactly 64,600 samples. Class 0 is spoof, as the project notes
   and upstream training labels specify. Silent input is unavailable.
+- [Community Forensics](https://github.com/JeongsooP/Community-Forensics/tree/ee5b71d43db0f3779e1edd64ee927b13f2dd6ad4),
+  official [87 MB ViT-S/16-384 checkpoint](https://huggingface.co/OwensLab/commfor-model-384/tree/6076002bf0d9dd37537f965ee2f06f826c333b61).
+  Original RGB frames use the published PIL resize-to-440, center-crop-to-384
+  and ImageNet normalization; the full checkpoint loads strictly. Sigmoid
+  scores are image classifier outputs. Frame counts and means are experimental
+  video summaries, with no calibrated clip-level threshold.
 
 The published loader uses XLSR-53, which differs from the encoder description
 in `models_overview.md`. This integration follows the actual published model.
@@ -126,6 +143,7 @@ license files and the model card are included with the assets.
 ```bash
 python check_video.py
 python check_audio.py
+python check_generated_image.py
 python check_server.py
 ```
 
@@ -146,3 +164,6 @@ The EER/AUC figures in `models_overview.md` were not reproduced in this
 integration. Multi-person frames use the largest detected face, and the
 initial voice result covers only the first 4.0375 seconds of an uploaded
 recording. A requested second pass covers up to the next 4.0375 seconds.
+
+See [the LTX investigation](MODEL_EVALUATION.md) for actual positive/control
+results, rejected alternatives, and the remaining visual detection limit.

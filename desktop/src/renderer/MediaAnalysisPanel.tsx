@@ -54,7 +54,7 @@ export function MediaAnalysisPanel({ disabled, onBusyChange }: { disabled: boole
   return (
     <section className="panel agent-settings" aria-labelledby="media-analysis-title">
       <h2 id="media-analysis-title">Analyze a video or audio file</h2>
-      <p className="settings-help">Uses real UCF and AASIST3 models in every mode. Up to 100 MB and five minutes.</p>
+      <p className="settings-help">Uses UCF, Community Forensics and AASIST3 in every mode. Up to 100 MB and five minutes.</p>
       <div className="actions">
         <button className="primary" disabled={disabled || busy || !window.sentinel} onClick={() => void analyze()}>
           Choose video or audio
@@ -65,14 +65,16 @@ export function MediaAnalysisPanel({ disabled, onBusyChange }: { disabled: boole
       {result && (
         <>
           <dl className="stats">
-            <div><dt>Video risk score</dt><dd>{formatScore(result.videoRisk)}</dd></div>
-            <div><dt>Voice risk score</dt><dd>{formatScore(result.voiceRisk)}</dd></div>
+            <div><dt>Face manipulation · UCF</dt><dd>{formatScore(result.videoRisk)}</dd></div>
+            <div><dt>Voice spoofing · AASIST3</dt><dd>{formatScore(result.voiceRisk)}</dd></div>
             <div><dt>Face samples</dt><dd>{result.facesFound} / {result.framesSampled}</dd></div>
             <div><dt>Voice analyzed</dt><dd>{result.voiceSeconds === null ? 'Unavailable' : `${result.voiceSeconds.toFixed(1)} seconds`}</dd></div>
           </dl>
+          {result.generatedFrameEvidence && <p className="settings-help"><strong>Community Forensics: {result.generatedFrameEvidence.flaggedFrames}/{result.generatedFrameEvidence.sampledFrames} frames flagged</strong> · mean {result.generatedFrameEvidence.meanScore.toFixed(3)} at frame threshold 0.5. Experimental video summary.</p>}
           {result.errors.video && <p className="settings-help">Video: {result.errors.video}</p>}
           {result.errors.audio && <p className="settings-help">Voice: {result.errors.audio}</p>}
-          <p className="settings-help">Scores are model signals, not calibrated probabilities. A low score does not prove authenticity.</p>
+          {result.errors.generatedVideo && <p className="settings-help">Generated-frame check: {result.errors.generatedVideo}</p>}
+          <p className="settings-help">Scores are uncalibrated. UCF can miss fully generated video; a low face score does not clear the video or cancel a voice warning.</p>
           <button className="ghost" disabled={result.videoRisk === null || result.voiceRisk === null} onClick={() => {
             if (result.videoRisk !== null && result.voiceRisk !== null) setCombined(1 - (1 - result.videoRisk) * (1 - result.voiceRisk))
           }}>Combine video and voice scores</button>

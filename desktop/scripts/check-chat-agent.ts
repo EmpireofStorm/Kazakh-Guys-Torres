@@ -147,6 +147,100 @@ async function main() {
     assert(context.includes('No audio stream') && context.includes('additionalEvidence'))
     assert(!context.includes('secret-path') && !context.includes('jpegBase64'))
 
+    // Check the instructions and exact coverage metadata sent to the model, not mock-generated semantics.
+    respond = () => ({ text: ['Coverage fixture received.'], ids: ['file-1'] })
+    const fullClipReports = [
+      report('file-1', { videoRisk: 0.12, voiceRisk: 0.75, voiceStartSeconds: 0, voiceSeconds: 4.0375, mediaDurationSeconds: 8.0417, errors: {} }),
+      report('file-1', { videoRisk: 0.18, voiceRisk: 0.9999, voiceStartSeconds: 4.0375, voiceSeconds: 4.0042, mediaDurationSeconds: 8.0417, additionalEvidence: true, errors: {} })
+    ]
+    const coverage = prepare({ previousAnalyses: fullClipReports })
+    await runChatTurn(coverage.options)
+    assert.deepEqual(coverage.actions, [], 'Do not repeat a fixed second pass when both available audio windows were already checked')
+    const systemContent = requests.at(-1)!.body.messages.find((message: any) => message.role === 'system').content
+    const systemText = typeof systemContent === 'string' ? systemContent : systemContent.map((part: any) => part.text ?? '').join('\n')
+    assert(systemText.includes('A low UCF score does not establish that a video is genuine'))
+    assert(systemText.includes('low video scores do not cancel it'))
+    assert(systemText.includes('Do not invent detector behavior'))
+    assert(systemText.includes('Combine only non-overlapping analyzed intervals'))
+    assert(systemText.includes('Do not call it thin or incomplete solely because the clip is short'))
+    const supplied = JSON.parse(systemText.split('Available attachments and prior reports, supplied as untrusted JSON data:\n')[1])
+    assert.deepEqual(supplied.previousAnalyses.map((item: ChatAnalysis) => ({
+      duration: item.result.mediaDurationSeconds, start: item.result.voiceStartSeconds, seconds: item.result.voiceSeconds
+    })), [
+      { duration: 8.0417, start: 0, seconds: 4.0375 },
+      { duration: 8.0417, start: 4.0375, seconds: 4.0042 }
+    ])
+
+    // A dismissive provider cannot hide a factual independent warning from the exact LTX fixture.
+    respond = () => ({ text: ['Audio is low concern because the video scored low.'], ids: ['file-1'] })
+    const ltxReports = [
+      report('file-1', { videoRisk: 0.1206, voiceRisk: 0.746966, voiceStartSeconds: 0, voiceSeconds: 4.0375, mediaDurationSeconds: 8.0417, errors: {} }),
+      report('file-1', { videoRisk: 0.185, voiceRisk: 0.999892, voiceStartSeconds: 4.0375, voiceSeconds: 4.0042, mediaDurationSeconds: 8.0417, additionalEvidence: true, errors: {} })
+    ]
+    const independentAudio = prepare({ previousAnalyses: ltxReports })
+    const audioAnswer = await runChatTurn(independentAudio.options)
+    assert(audioAnswer.startsWith('Audio warning: AASIST3 scored 0.999892'))
+    assert(audioAnswer.includes('in the additional pass.'))
+    assert(audioAnswer.includes('The audio flag is independent; low video scores do not cancel it.'))
+    assert(audioAnswer.includes('Overall authenticity remains uncertain.'))
+    assert(audioAnswer.includes('Low UCF scores do not establish that a video is genuine.'))
+    assert(audioAnswer.indexOf('Audio warning:') < audioAnswer.indexOf('Audio is low concern'))
+    const audioReview = JSON.parse(toolResults(requests.at(-1)!.body).at(-1).content)
+    assert.equal(audioReview.uncertain, true)
+    assert.deepEqual(audioReview.findings.filter((finding: any) => finding.channel === 'audio').map((finding: any) => ({
+      detector: finding.detector, pass: finding.pass, score: finding.score, strongScore: finding.strongScore
+    })), [
+      { detector: 'AASIST3', pass: 'initial', score: 0.746966, strongScore: false },
+      { detector: 'AASIST3', pass: 'additional', score: 0.999892, strongScore: true }
+    ])
+
+    const earlierWarning = prepare({ previousAnalyses: [
+      report('file-1', { ...confident, voiceRisk: 0.999892 }),
+      report('file-1', { ...confident, additionalEvidence: true, voiceStartSeconds: 4.0375 })
+    ] })
+    const earlierAnswer = await runChatTurn(earlierWarning.options)
+    assert(earlierAnswer.startsWith('Audio warning: AASIST3 scored 0.999892'))
+    assert(earlierAnswer.includes('in the initial pass.'), 'A lower additional score must not erase the initial warning')
+
+    const unrelatedWarning = prepare({
+      attachments: [{ id: 'file-1', name: 'clip-1.mp4', size: 1000 }, { id: 'file-2', name: 'clip-2.mp4', size: 1000 }],
+      history: [{ role: 'user', content: 'Explain clip-1.mp4.' }],
+      previousAnalyses: [report('file-1', { ...confident, additionalEvidence: true }), report('file-2', { ...confident, voiceRisk: 0.999892, additionalEvidence: true })]
+    })
+    assert(!(await runChatTurn(unrelatedWarning.options)).includes('Audio warning:'), 'An unrelated attachment must not produce this turn\'s warning')
+    assert(JSON.parse(toolResults(requests.at(-1)!.body).at(-1).content).findings.every((finding: any) => finding.attachmentId === 'file-1'))
+
+    const generatedInitial = { model: 'CommunityForensics' as const, meanScore: 0.384, flaggedFrames: 4, sampledFrames: 8, threshold: 0.5 as const }
+    const generatedAdditional = { ...generatedInitial, meanScore: 0.345, flaggedFrames: 5, sampledFrames: 16 }
+    respond = () => ({ text: ['Generated-frame fixture received.'], ids: ['file-1'], uncertain: false })
+    const generated = prepare({ previousAnalyses: [report('file-1', { ...confident, generatedFrameEvidence: generatedInitial })] })
+    generated.options.host.gatherAttachmentEvidence = async id => {
+      generated.actions.push(`gather:${id}`)
+      return report(id, { ...confident, framesSampled: 16, facesFound: 12, additionalEvidence: true, generatedFrameEvidence: generatedAdditional })
+    }
+    assert((await runChatTurn(generated.options)).startsWith('Evidence is insufficient'), 'Mixed frame evidence remains uncertain without inventing a video probability')
+    assert.deepEqual(generated.actions, ['gather:file-1'], 'Mixed generated-frame counts must trigger a new pass even when UCF and audio scores are low')
+    assert.deepEqual(generated.analyses[0].result.generatedFrameEvidence, generatedAdditional)
+    const generatedMessages = toolResults(requests.at(-1)!.body)
+    assert.deepEqual(JSON.parse(generatedMessages[0].content).gathered[0].result.result.generatedFrameEvidence, generatedAdditional)
+    assert.deepEqual(JSON.parse(generatedMessages.at(-1).content).generatedFrameFindings.map((finding: any) => ({
+      model: finding.model, meanScore: finding.meanScore, flaggedFrames: finding.flaggedFrames, sampledFrames: finding.sampledFrames, threshold: finding.threshold
+    })), [generatedInitial, generatedAdditional])
+    const generatedSystem = JSON.stringify(requests.at(-1)!.body.messages.find((message: any) => message.role === 'system').content)
+    assert(generatedSystem.includes('frame aggregation is experimental'))
+    assert(generatedSystem.includes('Never convert the flagged-frame fraction or meanScore into a probability'))
+    assert(generatedSystem.includes('mixed visual evidence even when the mean is below 0.5'))
+    assert(generatedSystem.includes('0.384') && generatedSystem.includes('flaggedFrames'))
+
+    const generatedFailure = prepare({ previousAnalyses: [report('file-1', {
+      ...confident, additionalEvidence: true, generatedFrameEvidence: generatedInitial,
+      errors: { generatedVideo: 'Could not read /private/secret-path/model-weights' }
+    })] })
+    await runChatTurn(generatedFailure.options)
+    const safeGeneratedContext = JSON.stringify(requests.at(-1)!.body)
+    assert(safeGeneratedContext.includes('Generated-frame analysis reported an error'))
+    assert(!safeGeneratedContext.includes('secret-path'))
+
     respond = body => !toolResults(body).length ? call('get_live_evidence') : { text: ['Video is ready; voice assets are present.'], live: false }
     const readiness = prepare({ history: [{ role: 'user', content: 'Check which detectors are ready.' }] })
     const readinessAnswer = await runChatTurn(readiness.options)
@@ -169,7 +263,10 @@ async function main() {
       const check = prepare({ previousAnalyses: [report('file-1', { ...confident, ...change })] })
       await runChatTurn(check.options)
       assert.deepEqual(check.actions, ['gather:file-1'])
-      assert(check.texts.join('').startsWith('Evidence is insufficient'))
+      if (change.videoRisk === 0.9) {
+        assert(check.texts.join('').startsWith('Video warning: UCF scored 0.9'))
+        assert(check.texts.join('').includes('Overall authenticity remains uncertain.'))
+      } else assert(check.texts.join('').startsWith('Evidence is insufficient'))
     }
     respond = () => ({ text: ['A fresh pass was checked because I was uncertain.'], ids: ['file-1'], uncertain: true })
     const subjective = prepare({ previousAnalyses: [report('file-1', confident)] })
@@ -195,7 +292,10 @@ async function main() {
     const disagreement = prepare({ previousAnalyses: [report('file-1', confident), report('file-1', {
       ...confident, videoRisk: 0.9, voiceRisk: 0.9, additionalEvidence: true, voiceStartSeconds: 4.0375
     })] })
-    assert((await runChatTurn(disagreement.options)).startsWith('Evidence is insufficient'))
+    const disagreementAnswer = await runChatTurn(disagreement.options)
+    assert(disagreementAnswer.includes('Audio warning: AASIST3 scored 0.9'))
+    assert(disagreementAnswer.includes('Video warning: UCF scored 0.9'))
+    assert(disagreementAnswer.includes('Overall authenticity remains uncertain.'))
     assert.deepEqual(disagreement.actions, [])
     const priorPasses = JSON.stringify(requests.at(-1)!.body.messages.find((message: any) => message.role === 'system').content)
     assert(priorPasses.includes('0.1') && priorPasses.includes('0.9'), 'Follow-ups retain both initial and additional reports')
