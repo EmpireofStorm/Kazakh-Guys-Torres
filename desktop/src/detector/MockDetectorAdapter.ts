@@ -1,15 +1,25 @@
-import type { DetectorResult, FrameInput } from '../shared/types'
-import { clampProbability, type DetectorAdapter } from './types'
+import type { DemoScenario, DetectorResult, FrameInput } from '../shared/types'
+import { demoProbability } from './demoScores'
+import type { DetectorAdapter } from './types'
 
 /**
- * Scripted detector so the demo can show:
- * LOW RISK → VERIFYING (unstable) → HIGH MANIPULATION RISK
+ * Scripted detector for the live demo.
+ * `synthetic` walks LOW → VERIFYING → HIGH MANIPULATION RISK.
+ * `authentic` stays in a low, stable band so the overlay remains LOW RISK.
  *
- * Ignores pixels on purpose. Real models enter through HttpDetectorAdapter.
+ * Ignores pixels. Real models enter through HttpDetectorAdapter.
  */
 export class MockDetectorAdapter implements DetectorAdapter {
   readonly name = 'mock-detector'
   private startedAt: number | null = null
+  private scenario: DemoScenario = 'synthetic'
+
+  constructor(private readonly now: () => number = () => Date.now()) {}
+
+  setDemoScenario(scenario: DemoScenario): void {
+    this.scenario = scenario
+    this.reset()
+  }
 
   reset(): void {
     this.startedAt = null
@@ -17,26 +27,10 @@ export class MockDetectorAdapter implements DetectorAdapter {
 
   async analyzeFrame(_frame: FrameInput): Promise<DetectorResult> {
     if (this.startedAt === null) {
-      this.startedAt = Date.now()
+      this.startedAt = this.now()
     }
 
-    const elapsed = (Date.now() - this.startedAt) / 1000
-    const jitter = (span: number) => (Math.random() - 0.5) * span
-
-    let probability: number
-    if (elapsed < 6) {
-      probability = 0.11 + jitter(0.06)
-    } else if (elapsed < 12) {
-      probability = 0.48 + jitter(0.42)
-    } else {
-      probability = 0.88 + jitter(0.05)
-    }
-
-    return {
-      deepfakeProbability: clampProbability(probability),
-      faceDetected: Math.random() > 0.04,
-      confidence: 0.9,
-      model: this.name
-    }
+    const elapsed = (this.now() - this.startedAt) / 1000
+    return demoProbability(this.scenario, elapsed)
   }
 }

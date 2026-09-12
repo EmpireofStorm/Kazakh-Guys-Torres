@@ -21,7 +21,10 @@ body,
 #root {
   margin: 0;
   min-height: 100%;
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #12352f 0%, transparent 55%),
+    radial-gradient(900px 420px at 100% 0%, #1a1a40 0%, transparent 50%),
+    var(--bg);
   color: var(--text);
   font-family: var(--font);
 }
@@ -86,6 +89,7 @@ h1 {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -264,7 +268,8 @@ dd {
   padding: 12px 14px 14px;
   border-radius: 14px;
   border: 1px solid #2a3b58;
-  background: rgba(8, 14, 24, 0.92);
+  background: rgba(8, 14, 24, 0.94);
+  backdrop-filter: blur(16px);
   box-shadow: 0 10px 30px #0008;
   user-select: none;
 }

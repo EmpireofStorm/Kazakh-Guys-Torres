@@ -1,3 +1,3 @@
 import { runDemoScenario } from './runDemoScenario'
 
-void runDemoScenario('synthetic')
+void runDemoScenario('authentic')

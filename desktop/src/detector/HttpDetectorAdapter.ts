@@ -1,5 +1,5 @@
-import type { DetectorResult, FrameInput } from '../shared/types'
 import { clampProbability, type DetectorAdapter } from './types'
+import type { DemoScenario, DetectorResult, FrameInput } from '../shared/types'
 
 /**
  * Phase 10 stub. Do not assume the Python model's internal API.
@@ -13,6 +13,8 @@ export class HttpDetectorAdapter implements DetectorAdapter {
   ) {}
 
   reset(): void {}
+
+  setDemoScenario(_scenario: DemoScenario): void {}
 
   async analyzeFrame(frame: FrameInput): Promise<DetectorResult> {
     const response = await fetch(this.endpoint, {

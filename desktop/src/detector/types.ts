@@ -1,9 +1,10 @@
-import type { DetectorResult, FrameInput } from '../shared/types'
+import type { DemoScenario, DetectorResult, FrameInput } from '../shared/types'
 
 export interface DetectorAdapter {
   readonly name: string
   analyzeFrame(frame: FrameInput): Promise<DetectorResult>
   reset(): void
+  setDemoScenario(scenario: DemoScenario): void
 }
 
 export function clampProbability(value: number): number {

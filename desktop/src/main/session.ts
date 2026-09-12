@@ -8,6 +8,7 @@ import type {
   AppPhase,
   AssessmentLevel,
   CaptureSource,
+  DemoScenario,
   DetectorResult,
   SamplingMode,
   SentinelUiState,
@@ -22,7 +23,12 @@ const analyzePayloadSchema = z.object({
 
 const startPayloadSchema = z.object({
   sourceId: z.string().min(1).max(512),
-  sourceName: z.string().min(1).max(256)
+  sourceName: z.string().min(1).max(256),
+  scenario: z.enum(['synthetic', 'authentic']).optional()
+})
+
+const demoPayloadSchema = z.object({
+  scenario: z.enum(['synthetic', 'authentic'])
 })
 
 const NORMAL_FPS = 1.5
@@ -39,6 +45,7 @@ export class SentinelSession {
   private errorMessage: string | null = null
   private overlayExpanded = false
   private highStreak = 0
+  private demoScenario: DemoScenario = 'synthetic'
   private ticker: ReturnType<typeof setTimeout> | null = null
   private listeners = new Set<(state: SentinelUiState) => void>()
 
@@ -64,7 +71,8 @@ export class SentinelSession {
       evidence: this.phase === 'MONITORING' ? this.evidence.snapshot() : null,
       errorMessage: this.errorMessage,
       overlayExpanded: this.overlayExpanded,
-      agentMode: hasOpenAIKey() ? 'openai' : 'fallback'
+      agentMode: hasOpenAIKey() ? 'openai' : 'fallback',
+      demoScenario: this.demoScenario
     }
   }
 
@@ -86,6 +94,8 @@ export class SentinelSession {
 
   startMonitoring(raw: unknown): SentinelUiState {
     const payload = startPayloadSchema.parse(raw)
+    this.demoScenario = payload.scenario ?? this.demoScenario
+    this.detector.setDemoScenario(this.demoScenario)
     this.detector.reset()
     this.evidence.reset()
     this.samplesAnalyzed = 0
@@ -107,10 +117,12 @@ export class SentinelSession {
     return this.getState()
   }
 
-  startScriptedDemo(): SentinelUiState {
+  startScriptedDemo(raw: unknown): SentinelUiState {
+    const payload = demoPayloadSchema.parse(raw)
     const state = this.startMonitoring({
-      sourceId: 'scripted:demo',
-      sourceName: 'Scripted demo timeline'
+      sourceId: `scripted:${payload.scenario}`,
+      sourceName: 'Primary participant',
+      scenario: payload.scenario
     })
     this.startTicker()
     return state

@@ -16,6 +16,14 @@ export type SamplingMode = 'NORMAL' | 'INTENSIVE'
 
 export type AgentMode = 'openai' | 'fallback'
 
+export type DemoScenario = 'synthetic' | 'authentic'
+
+export interface DemoClip {
+  id: string
+  name: string
+  url: string
+}
+
 export interface DetectorResult {
   deepfakeProbability: number
   faceDetected: boolean
@@ -81,6 +89,7 @@ export interface SentinelUiState {
   errorMessage: string | null
   overlayExpanded: boolean
   agentMode: AgentMode
+  demoScenario: DemoScenario
 }
 
 export function toDisplayState(

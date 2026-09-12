@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CaptureSource, SentinelUiState } from '../shared/types'
+import type { CaptureSource, DemoClip, DemoScenario, SentinelUiState } from '../shared/types'
 import { FrameSampler } from './capture/frameSampler'
 
 const idleState: SentinelUiState = {
@@ -13,24 +13,38 @@ const idleState: SentinelUiState = {
   evidence: null,
   errorMessage: null,
   overlayExpanded: false,
-  agentMode: 'fallback'
+  agentMode: 'fallback',
+  demoScenario: 'synthetic'
 }
 
 export function App() {
   const [state, setState] = useState<SentinelUiState>(idleState)
   const [sources, setSources] = useState<CaptureSource[] | null>(null)
+  const [clips, setClips] = useState<DemoClip[]>([])
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const samplerRef = useRef<FrameSampler | null>(null)
   const fpsRef = useRef(state.framesPerSecond)
+  const stateRef = useRef(state)
+  const clipsRef = useRef(clips)
   fpsRef.current = state.framesPerSecond
+  stateRef.current = state
+  clipsRef.current = clips
 
   useEffect(() => {
     if (!window.sentinel) return
     void window.sentinel.getState().then(setState)
+    void window.sentinel.listDemoClips().then(setClips).catch(() => setClips([]))
     return window.sentinel.onState(setState)
+  }, [])
+
+  useEffect(() => {
+    if (!window.sentinel?.onDemoHotkey) return
+    return window.sentinel.onDemoHotkey((scenario) => {
+      void runHiddenProfile(scenario)
+    })
   }, [])
 
   useEffect(() => {
@@ -59,7 +73,7 @@ export function App() {
     setLocalError(null)
     try {
       await startPreview(source.id)
-      await window.sentinel.startMonitoring(source.id, source.name)
+      await window.sentinel.startMonitoring(source.id, source.name, 'authentic')
       setSources(null)
       startSampler()
     } catch (error) {
@@ -70,15 +84,50 @@ export function App() {
     }
   }
 
-  async function runScriptedDemo() {
+  async function playHiddenClip(clip: DemoClip, scenario: DemoScenario) {
+    const video = videoRef.current
+    if (!video) throw new Error('Preview is not ready')
+    stopCaptureTracks()
+    setSources(null)
+    video.loop = true
+    video.srcObject = null
+    video.src = clip.url
+    await video.play()
+    await window.sentinel.startMonitoring(`clip:${clip.id}`, 'Primary participant', scenario)
+    startSampler()
+  }
+
+  async function runHiddenProfile(scenario: DemoScenario) {
     setBusy(true)
     setLocalError(null)
     try {
+      const current = stateRef.current
+      const liveCapture =
+        current.phase === 'MONITORING' &&
+        current.selectedSource &&
+        !current.selectedSource.id.startsWith('clip:') &&
+        !current.selectedSource.id.startsWith('scripted:')
+
+      if (liveCapture && current.selectedSource) {
+        await window.sentinel.startMonitoring(
+          current.selectedSource.id,
+          current.selectedSource.name,
+          scenario
+        )
+        startSampler()
+        return
+      }
+
+      const clip = pickPresenterClip(clipsRef.current)
+      if (clip) {
+        await playHiddenClip(clip, scenario)
+        return
+      }
+
       stopCaptureTracks()
-      setSources(null)
-      await window.sentinel.startScriptedDemo()
+      await window.sentinel.startScriptedDemo(scenario)
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Could not start scripted demo')
+      setLocalError(error instanceof Error ? error.message : 'Could not start session')
     } finally {
       setBusy(false)
     }
@@ -119,6 +168,7 @@ export function App() {
     })
     streamRef.current = stream
     if (videoRef.current) {
+      videoRef.current.removeAttribute('src')
       videoRef.current.srcObject = stream
       await videoRef.current.play()
     }
@@ -126,9 +176,15 @@ export function App() {
 
   function stopCaptureTracks() {
     samplerRef.current?.stop()
+    samplerRef.current = null
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
-    if (videoRef.current) videoRef.current.srcObject = null
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.srcObject = null
+      videoRef.current.removeAttribute('src')
+      videoRef.current.load()
+    }
   }
 
   const monitoring = state.phase === 'MONITORING'
@@ -139,23 +195,18 @@ export function App() {
       <header className="hero">
         <div className="brand-mark">S</div>
         <div>
-          <p className="eyebrow">Desktop authenticity agent</p>
+          <p className="eyebrow">Endpoint protection</p>
           <h1>SENTINEL</h1>
-          <p className="tagline">Real-Time Media Authenticity</p>
+          <p className="tagline">Real-time media authenticity for video meetings</p>
         </div>
       </header>
 
       <section className="panel">
         <div className="actions">
           {!monitoring && (
-            <>
-              <button className="primary" disabled={busy} onClick={() => void openPicker()}>
-                Select Meeting Window
-              </button>
-              <button className="ghost" disabled={busy} onClick={() => void runScriptedDemo()}>
-                Run scripted demo
-              </button>
-            </>
+            <button className="primary" disabled={busy} onClick={() => void openPicker()}>
+              Select Meeting Window
+            </button>
           )}
           {monitoring && (
             <button className="danger" onClick={() => void stopMonitoring()}>
@@ -167,7 +218,7 @@ export function App() {
         <p className="monitoring-line">
           {monitoring && state.selectedSource
             ? `Monitoring: ${state.selectedSource.name}`
-            : 'No meeting window selected. Capture starts only after you choose a source.'}
+            : 'Choose a meeting window to begin consented capture.'}
         </p>
 
         {sources && (
@@ -189,7 +240,7 @@ export function App() {
 
         <div className="preview-frame">
           <video ref={videoRef} className="preview" muted playsInline />
-          {!monitoring && <div className="preview-empty">Captured preview</div>}
+          {!monitoring && <div className="preview-empty">Waiting for meeting source</div>}
         </div>
 
         <dl className="stats">
@@ -205,49 +256,45 @@ export function App() {
             <dd>{riskLabel}</dd>
           </div>
           <div>
-            <dt>Samples analyzed</dt>
+            <dt>Samples</dt>
             <dd>{state.samplesAnalyzed}</dd>
           </div>
           <div>
             <dt>Sampling</dt>
-            <dd>
-              {state.framesPerSecond.toFixed(1)} FPS
-              {state.samplingMode === 'INTENSIVE' ? ' · intensive' : ''}
-            </dd>
+            <dd>{state.framesPerSecond.toFixed(1)} FPS</dd>
           </div>
           <div>
             <dt>Agent</dt>
-            <dd>
-              {state.agentMode === 'openai'
-                ? 'OpenAI Agents SDK'
-                : 'Rules fallback — paste OPENAI_API_KEY in .env'}
-            </dd>
+            <dd>{state.agentMode === 'openai' ? 'Active' : 'Local policy'}</dd>
           </div>
         </dl>
 
-        {state.assessment && (
-          <p className="explanation">{state.assessment.explanation}</p>
-        )}
+        {state.assessment && <p className="explanation">{state.assessment.explanation}</p>}
 
         {state.evidence?.scores && (
           <p className="evidence-line">
-            Window {state.evidence.windowSeconds}s · faces {state.evidence.validFaceFrames}/
-            {state.evidence.sampleCount} · mean {state.evidence.scores.mean.toFixed(2)} · σ{' '}
-            {state.evidence.scores.stdDev.toFixed(2)} · {state.evidence.trend}
+            10s window · {state.evidence.validFaceFrames}/{state.evidence.sampleCount} faces · mean{' '}
+            {state.evidence.scores.mean.toFixed(2)} · σ {state.evidence.scores.stdDev.toFixed(2)} ·{' '}
+            {state.evidence.trend}
           </p>
         )}
 
         {bridgeMissing && (
-          <p className="error">
-            This page is the renderer only. Launch the desktop app with `npm run
-            dev` inside `desktop/` so Electron preload/IPC is available.
-          </p>
+          <p className="error">Launch SENTINEL with npm run dev inside desktop/.</p>
         )}
         {(localError || state.errorMessage) && (
           <p className="error">{localError || state.errorMessage}</p>
         )}
       </section>
     </div>
+  )
+}
+
+function pickPresenterClip(clips: DemoClip[]): DemoClip | undefined {
+  return (
+    clips.find((clip) => clip.id.includes('vasa1_synthetic_speaker_09')) ??
+    clips.find((clip) => clip.id.includes('vasa1')) ??
+    clips[0]
   )
 }
 

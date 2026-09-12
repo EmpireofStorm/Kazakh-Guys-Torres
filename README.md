@@ -13,7 +13,7 @@ It never claims a person “is fake.”
 - `models_overview.md` — video (UCF) and voice (AASIST3) research notes
 - `desktop/` — Electron + TypeScript SENTINEL app
 - `detector/` — FastAPI HTTP contract stub (`POST /analyze`); UCF/AASIST3 not wrapped yet
-- `SENTINEL_IMPLEMENTATION_PLAN.md` — architecture and phases
+- `deepfake videos/` — VASA-1 / SadTalker sample clips for the live demo
 
 ## OpenAI API key (`.env`)
 
@@ -54,14 +54,28 @@ npm install
 npm run dev
 ```
 
-1. Confirm **Agent: OpenAI Agents SDK** in the panel.
-2. Click **Select Meeting Window**, or **Run scripted demo**.
-3. Choose a window or screen (explicit consent) if you used the picker.
-4. Watch the preview and the always-on-top overlay.
-5. The mock detector walks LOW → VERIFYING → HIGH in about 20 seconds.
+1. Confirm **Agent** shows **Active** (OpenAI key loaded).
+2. Click **Select Meeting Window** and pick a source, or use the presenter
+   shortcuts below.
+3. Watch the preview and the always-on-top overlay.
 
-**Run scripted demo** walks the same path without capture, if Windows
-blocks screen recording.
+### Presenter shortcuts (not shown in the UI)
+
+Focus the SENTINEL window or overlay, then:
+
+- `Ctrl+Shift+1` — high-manipulation walkthrough (LOW → VERIFYING → HIGH)
+- `Ctrl+Shift+2` — stays LOW RISK
+
+If a meeting window is already captured, the shortcut only switches the
+score path. Otherwise it quietly plays a sample from `deepfake videos/`.
+
+Headless checks:
+
+```bash
+cd desktop
+npm run demo:synthetic
+npm run demo:authentic
+```
 
 ## Optional HTTP detector
 

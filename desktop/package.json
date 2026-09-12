@@ -9,7 +9,9 @@
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "demo:timeline": "npx --yes tsx scripts/simulate-demo.ts"
+    "demo:timeline": "npx --yes tsx scripts/simulate-demo.ts",
+    "demo:synthetic": "npx --yes tsx scripts/demo-synthetic.ts",
+    "demo:authentic": "npx --yes tsx scripts/demo-authentic.ts"
   },
   "dependencies": {
     "@openai/agents": "^0.3.3",
