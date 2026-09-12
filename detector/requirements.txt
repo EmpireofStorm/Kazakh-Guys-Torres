@@ -1,3 +1,14 @@
-fastapi>=0.115.0
-uvicorn>=0.32.0
-pydantic>=2.9.0
+fastapi==0.115.12
+uvicorn==0.34.3
+pydantic==2.11.7
+torch==2.6.0
+torchaudio==2.6.0
+transformers==4.52.4
+huggingface-hub==0.32.4
+safetensors==0.5.3
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+scikit-image==0.25.2
+dlib==20.0.0
+soundfile==0.13.1
+httpx==0.28.1

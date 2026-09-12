@@ -12,5 +12,6 @@ desktop/.vite/
 .idea/
 .vscode/
 detector/.venv/
+detector/models/
 detector/__pycache__/
 *.pyc
