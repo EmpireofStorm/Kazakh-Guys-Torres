@@ -3,6 +3,7 @@ import { createDetectorAdapter } from '../detector/factory'
 import { EvidenceAggregator } from '../evidence/aggregator'
 import { runSentinelDecision } from '../agent/openaiAgent'
 import type { AgentToolHost } from '../agent/tools'
+import { hasOpenAIKey } from './env'
 import type {
   AppPhase,
   AssessmentLevel,
@@ -62,7 +63,8 @@ export class SentinelSession {
       selectedSource: this.selectedSource,
       evidence: this.phase === 'MONITORING' ? this.evidence.snapshot() : null,
       errorMessage: this.errorMessage,
-      overlayExpanded: this.overlayExpanded
+      overlayExpanded: this.overlayExpanded,
+      agentMode: hasOpenAIKey() ? 'openai' : 'fallback'
     }
   }
 

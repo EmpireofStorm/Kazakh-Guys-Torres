@@ -1,13 +1,11 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
-import { config as loadEnv } from 'dotenv'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc'
+import { loadSentinelEnv } from './env'
 import { createOverlayWindow, resizeOverlay } from './overlay'
 import { mapDesktopSources, SentinelSession } from './session'
 
-loadEnv({ path: join(app.getAppPath(), '..', '.env') })
-loadEnv({ path: join(process.cwd(), '..', '.env') })
-loadEnv({ path: join(process.cwd(), '.env') })
+loadSentinelEnv()
 
 const isDev = !app.isPackaged
 const sentinel = new SentinelSession()

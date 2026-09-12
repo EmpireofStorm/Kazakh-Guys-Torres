@@ -11,7 +11,8 @@ const idle: SentinelUiState = {
   selectedSource: null,
   evidence: null,
   errorMessage: null,
-  overlayExpanded: false
+  overlayExpanded: false,
+  agentMode: 'fallback'
 }
 
 export function OverlayApp() {

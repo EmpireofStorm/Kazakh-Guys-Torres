@@ -1,6 +1,7 @@
 import { CONSERVATIVE_COPY, SENTINEL_AGENT_INSTRUCTIONS } from './instructions'
 import { decideWithPersistence, shouldInvokeAgent } from './orchestrator'
 import type { AgentToolHost } from './tools'
+import { hasOpenAIKey } from '../main/env'
 import type { AssessmentLevel, EvidenceSnapshot } from '../shared/types'
 
 export async function runSentinelDecision(
@@ -16,8 +17,7 @@ export async function runSentinelDecision(
     return 'LOW_RISK'
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
+  if (!hasOpenAIKey()) {
     return decideWithPersistence(snapshot, host, highStreak)
   }
 

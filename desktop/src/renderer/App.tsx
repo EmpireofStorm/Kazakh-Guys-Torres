@@ -12,7 +12,8 @@ const idleState: SentinelUiState = {
   selectedSource: null,
   evidence: null,
   errorMessage: null,
-  overlayExpanded: false
+  overlayExpanded: false,
+  agentMode: 'fallback'
 }
 
 export function App() {
@@ -212,6 +213,14 @@ export function App() {
             <dd>
               {state.framesPerSecond.toFixed(1)} FPS
               {state.samplingMode === 'INTENSIVE' ? ' · intensive' : ''}
+            </dd>
+          </div>
+          <div>
+            <dt>Agent</dt>
+            <dd>
+              {state.agentMode === 'openai'
+                ? 'OpenAI Agents SDK'
+                : 'Rules fallback — paste OPENAI_API_KEY in .env'}
             </dd>
           </div>
         </dl>
