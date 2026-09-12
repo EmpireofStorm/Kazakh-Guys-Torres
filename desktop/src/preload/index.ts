@@ -3,7 +3,10 @@ import { IPC } from '../shared/ipc'
 import type { SentinelPreloadApi } from '../shared/api'
 import type { CaptureSource, SentinelUiState } from '../shared/types'
 
-const api = {
+const api: SentinelPreloadApi = {
+  getAgentSettings: () => ipcRenderer.invoke(IPC.agentSettingsGet),
+  saveAgentSettings: (input) => ipcRenderer.invoke(IPC.agentSettingsSave, input),
+  testAgentConnection: (input) => ipcRenderer.invoke(IPC.agentConnectionTest, input),
   listSources: (): Promise<CaptureSource[]> => ipcRenderer.invoke(IPC.sourcesList),
   startMonitoring: (sourceId: string, sourceName: string): Promise<SentinelUiState> =>
     ipcRenderer.invoke(IPC.monitorStart, { sourceId, sourceName }),

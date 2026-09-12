@@ -14,7 +14,39 @@ export type DisplayState =
 
 export type SamplingMode = 'NORMAL' | 'INTENSIVE'
 
-export type AgentMode = 'openai' | 'fallback'
+export type AgentMode = 'langchain' | 'fallback'
+
+export interface AgentSettings {
+  enabled: boolean
+  baseUrl: string
+  model: string
+  hasApiKey: boolean
+}
+
+export interface AgentSettingsInput {
+  enabled: boolean
+  baseUrl: string
+  model: string
+  apiKey?: string
+  clearApiKey?: boolean
+}
+
+export interface AgentSettingsResult {
+  ok: boolean
+  settings: AgentSettings
+  error?: string
+}
+
+export interface AgentConnectionTestResult {
+  ok: boolean
+  message: string
+}
+
+export interface AgentActivity {
+  id: number
+  timestamp: number
+  message: string
+}
 
 export interface DetectorResult {
   deepfakeProbability: number
@@ -81,6 +113,8 @@ export interface SentinelUiState {
   errorMessage: string | null
   overlayExpanded: boolean
   agentMode: AgentMode
+  agentBusy: boolean
+  agentActivity: AgentActivity[]
 }
 
 export function toDisplayState(

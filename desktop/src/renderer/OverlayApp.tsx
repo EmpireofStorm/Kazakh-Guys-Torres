@@ -12,7 +12,9 @@ const idle: SentinelUiState = {
   evidence: null,
   errorMessage: null,
   overlayExpanded: false,
-  agentMode: 'fallback'
+  agentMode: 'fallback',
+  agentActivity: [],
+  agentBusy: false
 }
 
 export function OverlayApp() {
@@ -52,6 +54,9 @@ function overlayMode(state: SentinelUiState): {
   body?: string
   showDetails?: boolean
 } {
+  if (state.phase === 'MONITORING' && !state.assessment) {
+    return { tone: 'verify', glyph: '◐', title: 'GATHERING EVIDENCE' }
+  }
   if (state.displayState === 'HIGH_RISK') {
     return {
       tone: 'high',

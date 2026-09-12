@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CaptureSource, SentinelUiState } from '../shared/types'
 import { FrameSampler } from './capture/frameSampler'
+import { AgentSettingsPanel } from './AgentSettingsPanel'
 
 const idleState: SentinelUiState = {
   phase: 'IDLE',
@@ -13,7 +14,9 @@ const idleState: SentinelUiState = {
   evidence: null,
   errorMessage: null,
   overlayExpanded: false,
-  agentMode: 'fallback'
+  agentMode: 'fallback',
+  agentActivity: [],
+  agentBusy: false
 }
 
 export function App() {
@@ -218,12 +221,32 @@ export function App() {
           <div>
             <dt>Agent</dt>
             <dd>
-              {state.agentMode === 'openai'
-                ? 'OpenAI Agents SDK'
-                : 'Rules fallback — paste OPENAI_API_KEY in .env'}
+              {state.agentMode === 'langchain' ? 'LangChain agent' : 'Local rules'}
+              {state.agentBusy ? ' · investigating' : ''}
             </dd>
           </div>
         </dl>
+
+        <p className="settings-help">Demo mode uses simulated detector scores.</p>
+
+        <section className="agent-activity" aria-labelledby="agent-activity-title">
+          <h2 id="agent-activity-title">Agent activity</h2>
+          <p className="settings-help" role="status" aria-live="polite">
+            {state.agentBusy ? 'Investigation in progress…' : monitoring ? 'Watching for new evidence.' : 'Start monitoring to see agent actions.'}
+          </p>
+          {state.agentActivity.length > 0 && (
+            <ol className="activity-log" aria-label="Recent agent actions">
+              {state.agentActivity.slice(-8).map((event) => (
+                <li key={event.id}>
+                  <time dateTime={new Date(event.timestamp).toISOString()}>
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </time>
+                  <span>{event.message}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
 
         {state.assessment && (
           <p className="explanation">{state.assessment.explanation}</p>
@@ -247,6 +270,7 @@ export function App() {
           <p className="error">{localError || state.errorMessage}</p>
         )}
       </section>
+      <AgentSettingsPanel />
     </div>
   )
 }
@@ -259,6 +283,7 @@ function formatRisk(state: SentinelUiState): string {
 }
 
 function statusText(state: SentinelUiState): string {
+  if (state.phase === 'MONITORING' && !state.assessment) return 'Gathering evidence'
   if (state.displayState === 'VERIFYING') return 'Verifying'
   if (state.displayState === 'HIGH_RISK') return 'High manipulation risk'
   if (state.displayState === 'LOW_RISK' || state.displayState === 'MONITORING') return 'Monitoring'

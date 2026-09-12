@@ -22,10 +22,3 @@ export function loadSentinelEnv(): string | null {
 
   return null
 }
-
-export function hasOpenAIKey(): boolean {
-  const key = process.env.OPENAI_API_KEY?.trim() ?? ''
-  if (!key) return false
-  if (/^(sk-your-key-here|changeme|xxx)$/i.test(key)) return false
-  return key.length >= 20
-}

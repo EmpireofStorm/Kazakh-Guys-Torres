@@ -1,5 +1,13 @@
 import type { DetectorResult, FrameInput } from '../shared/types'
-import { clampProbability, type DetectorAdapter } from './types'
+import type { DetectorAdapter } from './types'
+import { z } from 'zod'
+
+const detectorResultSchema = z.object({
+  deepfakeProbability: z.number().finite().min(0).max(1),
+  faceDetected: z.boolean(),
+  confidence: z.number().finite().min(0).max(1).optional(),
+  model: z.string().max(128).optional()
+})
 
 /**
  * Phase 10 stub. Do not assume the Python model's internal API.
@@ -14,8 +22,9 @@ export class HttpDetectorAdapter implements DetectorAdapter {
 
   reset(): void {}
 
-  async analyzeFrame(frame: FrameInput): Promise<DetectorResult> {
+  async analyzeFrame(frame: FrameInput, signal?: AbortSignal): Promise<DetectorResult> {
     const response = await fetch(this.endpoint, {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -28,12 +37,11 @@ export class HttpDetectorAdapter implements DetectorAdapter {
       throw new Error(`Detector HTTP ${response.status}`)
     }
 
-    const body = (await response.json()) as Partial<DetectorResult>
+    const body = detectorResultSchema.parse(await response.json())
     return {
-      deepfakeProbability: clampProbability(Number(body.deepfakeProbability ?? 0)),
-      faceDetected: Boolean(body.faceDetected),
-      confidence:
-        body.confidence === undefined ? undefined : clampProbability(Number(body.confidence)),
+      deepfakeProbability: body.deepfakeProbability,
+      faceDetected: body.faceDetected,
+      confidence: body.confidence,
       model: body.model ?? this.name
     }
   }

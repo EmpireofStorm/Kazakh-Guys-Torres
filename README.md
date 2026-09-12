@@ -15,53 +15,82 @@ It never claims a person “is fake.”
 - `detector/` — FastAPI HTTP contract stub (`POST /analyze`); UCF/AASIST3 not wrapped yet
 - `SENTINEL_IMPLEMENTATION_PLAN.md` — architecture and phases
 
-## OpenAI API key (`.env`)
-
-SENTINEL uses the **OpenAI Agents SDK** in the Electron main process. The
-deepfake detector is a tool. The agent decides whether evidence is enough,
-whether to sample more, and what to show the user.
-
-1. In the **repository root** (same folder as this README), create or open `.env`.
-2. You can copy the template:
-
-```bash
-copy .env.example .env
-```
-
-3. Put your key on one line. No quotes, no spaces around the key:
-
-```
-OPENAI_API_KEY=sk-your-key-here
-DETECTOR_URL=http://127.0.0.1:8000/analyze
-SENTINEL_DETECTOR=mock
-```
-
-4. Save the file. `.env` is gitignored — **never commit or paste the key**.
-5. Restart the desktop app after any key change (`Ctrl+C`, then `npm run dev` again).
-6. In the control panel, **Agent** should read **OpenAI Agents SDK**.
-   If it still says **Rules fallback**, the key was not loaded.
-
-The renderer never sees the key. Only the main process reads `.env`.
-
-Without a key the app still runs, but decisions use the deterministic
-fallback instead of `@openai/agents`. For the hackathon demo, use a key.
-
 ## Run SENTINEL
 
 ```bash
 cd desktop
-npm install
+npm ci
 npm run dev
 ```
 
-1. Confirm **Agent: OpenAI Agents SDK** in the panel.
+1. Configure **Agent connection** as described below.
 2. Click **Select Meeting Window**, or **Run scripted demo**.
-3. Choose a window or screen (explicit consent) if you used the picker.
-4. Watch the preview and the always-on-top overlay.
-5. The mock detector walks LOW → VERIFYING → HIGH in about 20 seconds.
+3. Choose a window or screen if you used the picker.
+4. Watch the preview, overlay, and **Agent activity** log.
+5. The mock detector supplies low, fluctuating, then elevated scores. The agent's tools determine its next action; the alert timing can vary.
 
 **Run scripted demo** walks the same path without capture, if Windows
 blocks screen recording.
+
+## LangChain agent connection
+
+SENTINEL runs a LangChain tool-calling agent in Electron's main process.
+It uses your chosen OpenAI-compatible Chat Completions endpoint. There is
+no default cloud endpoint and no OpenAI Platform account setup.
+
+In **Agent connection**:
+
+1. Enter the **Base URL**, including the server's API prefix. For example, `http://localhost:11434/v1`. Do not append `/chat/completions`.
+2. Enter the exact **Model ID** served by that endpoint. The model must support function tools.
+3. Enter an optional **API key**. Keyless local endpoints are supported.
+4. Click **Test connection** to verify a small function-tool roundtrip using the form values. This does not save settings or send meeting data.
+5. Enable **LangChain agent** and click **Save settings**. Changes apply immediately; an investigation using the previous settings is cancelled.
+
+Settings persist on this device in Electron's user-data directory. API keys
+are encrypted using the OS credential service and are never sent back to the
+renderer after saving. Changing the base URL clears the previous key unless
+you enter a replacement. The key field is cleared after saving.
+
+For initial configuration you can also set `SENTINEL_LLM_BASE_URL`,
+`SENTINEL_LLM_MODEL`, and optionally `SENTINEL_LLM_API_KEY` in the gitignored
+repo-root `.env`. Saved UI settings take precedence. The legacy names
+`OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY` are accepted together;
+an API key alone does not enable a provider. Restart after changing `.env`.
+
+The runtime uses LangChain's [custom base URL support](https://docs.langchain.com/oss/javascript/integrations/chat/openai#custom-urls)
+and [agent tool loop](https://docs.langchain.com/oss/javascript/langchain/agents).
+
+## What the agent does
+
+The agent reads recent score statistics, chooses whether to request a bounded
+sampling window, and publishes an assessment. Requested sampling runs while
+the UI remains responsive. Later investigations receive the newly collected
+scores. The activity log records executed tools and outcomes, not hidden reasoning.
+
+- Stable low scores use local rules without an LLM request.
+- An investigation has a 12-second deadline, a six-tool-call budget, and at most one additional sampling request.
+- Requested sampling lasts 2–20 seconds at 1–4 frames per second. The next investigation waits for that window.
+- Code enforces evidence requirements for low/high assessments. Sparse or expired evidence remains uncertain.
+- Stop cancels model/detector requests and prevents late results from changing the session. Endpoint failures are visible and fall back to local evidence rules.
+- Only score summaries go to the LLM endpoint. Raw meeting frames remain on the detector path.
+
+**Detector integration is still separate:** the default detector is simulated,
+the HTTP service is a contract stub, and live voice analysis is not connected.
+The agent never invents voice evidence or visual artifacts from a risk score.
+The current thresholds are demo rules, not calibrated guarantees.
+
+## Checks
+
+```bash
+cd desktop
+npm test
+npm run typecheck
+npm run build
+```
+
+The checks use local test servers. They exercise tool calls, custom URL/model/key
+routing, unavailable endpoints, cancellation, settings persistence, and capture
+lifecycle without contacting an external model provider.
 
 ## Optional HTTP detector
 

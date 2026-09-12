@@ -1,5 +1,6 @@
 export class FrameSampler {
   private timer: number | null = null
+  private generation = 0
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
 
@@ -15,19 +16,22 @@ export class FrameSampler {
 
   start(getFps: () => number): void {
     this.stop()
+    const generation = this.generation
     const tick = async () => {
+      if (generation !== this.generation) return
       const fps = Math.min(4, Math.max(1, getFps()))
       try {
         await this.capture()
       } catch {
         // keep sampling even if one frame fails
       }
-      this.timer = window.setTimeout(tick, Math.round(1000 / fps))
+      if (generation === this.generation) this.timer = window.setTimeout(tick, Math.round(1000 / fps))
     }
     void tick()
   }
 
   stop(): void {
+    this.generation += 1
     if (this.timer !== null) {
       window.clearTimeout(this.timer)
       this.timer = null

@@ -94,10 +94,11 @@ No nested git repositories. CopilotKit starter, if used, is cloned **outside** t
 - electron-vite (dev server + dual renderer entries)
 - zod (IPC + tool schemas)
 
-**Agent**
+**Agent, updated September 12**
 
-- `@openai/agents` when `OPENAI_API_KEY` is present
-- Deterministic fallback orchestrator so the demo works **without** a key
+- LangChain `createAgent` and `@langchain/openai` with a user-configured compatible Chat Completions base URL and model.
+- Settings and a tool-calling connection test are available in the desktop UI; saved keys use OS encryption.
+- Bounded tool runs, cancellation, an activity log, and deterministic fallback. See the README for the current configuration and validation commands.
 
 **Detector (later)**
 

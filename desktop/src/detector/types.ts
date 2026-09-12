@@ -2,7 +2,7 @@ import type { DetectorResult, FrameInput } from '../shared/types'
 
 export interface DetectorAdapter {
   readonly name: string
-  analyzeFrame(frame: FrameInput): Promise<DetectorResult>
+  analyzeFrame(frame: FrameInput, signal?: AbortSignal): Promise<DetectorResult>
   reset(): void
 }
 
