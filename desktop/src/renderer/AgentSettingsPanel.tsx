@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { AgentSettings, AgentSettingsInput } from '../shared/types'
 
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+
 export function AgentSettingsPanel() {
   const [saved, setSaved] = useState<AgentSettings | null>(null)
   const [form, setForm] = useState<AgentSettingsInput>({
@@ -14,6 +16,7 @@ export function AgentSettingsPanel() {
   const bridgeMissing = typeof window.sentinel === 'undefined'
   const endpointChanged = saved !== null &&
     form.baseUrl.trim().replace(/\/+$/, '') !== saved.baseUrl.replace(/\/+$/, '')
+  const isOpenRouter = form.baseUrl.trim().replace(/\/+$/, '') === OPENROUTER_BASE_URL
 
   useEffect(() => {
     if (!window.sentinel) return
@@ -74,13 +77,19 @@ export function AgentSettingsPanel() {
       <h2 id="agent-settings-title">Agent connection</h2>
       <p className="settings-help">
         Use a server with OpenAI-compatible chat completions and tool calling.
-        During monitoring, the agent sends score summaries to this endpoint.
+        The agent sends chat text, filenames and score summaries to this endpoint.
+        Raw media goes only to your detector service.
       </p>
       <p className="settings-help">
         Saved configuration: {saved ? saved.enabled ? `LangChain · ${saved.model}` : 'Local rules' : pending === 'load' && !bridgeMissing ? 'Loading…' : 'Unavailable'}
       </p>
       <form onSubmit={(event) => void submit(event)}>
         <fieldset disabled={pending !== null || bridgeMissing}>
+          <button className="ghost" type="button" onClick={() => {
+            update({ enabled: true, baseUrl: OPENROUTER_BASE_URL,
+              model: isOpenRouter ? form.model : '', apiKey: isOpenRouter ? form.apiKey : '', clearApiKey: false })
+          }}>Use OpenRouter</button>
+          {isOpenRouter && <p className="settings-help">Enter an OpenRouter model ID in provider/model format. Choose a model with tool calling and streaming support; no model is selected automatically.</p>}
           <label className="checkbox-field">
             <input
               type="checkbox"
@@ -107,14 +116,14 @@ export function AgentSettingsPanel() {
               <input
                 required={form.enabled}
                 value={form.model}
-                placeholder="Your server's model ID"
+                placeholder={isOpenRouter ? 'provider/model-name' : "Your server's model ID"}
                 onChange={(event) => update({ model: event.target.value })}
                 autoComplete="off"
                 spellCheck={false}
               />
             </label>
             <label>
-              API key, optional
+              {isOpenRouter ? 'OpenRouter API key' : 'API key, optional'}
               <input
                 type="password"
                 value={form.apiKey || ''}

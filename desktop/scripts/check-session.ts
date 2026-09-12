@@ -4,13 +4,36 @@ import type { AddressInfo } from 'node:net'
 import { SentinelSession } from '../src/main/session'
 import { FrameSampler } from '../src/renderer/capture/frameSampler'
 import { HttpDetectorAdapter } from '../src/detector/HttpDetectorAdapter'
-import type { DetectorResult } from '../src/shared/types'
+import { EvidenceAggregator } from '../src/evidence/aggregator'
+import type { DetectorResult, EvidenceSnapshot } from '../src/shared/types'
 
 const result: DetectorResult = { deepfakeProbability: 0.6, faceDetected: true, model: 'test-only' }
 const frame = () => ({ jpegBase64: 'A'.repeat(48), capturedAt: Date.now() })
 const source = { sourceId: 'test:window', sourceName: 'Test window' }
 
 async function main() {
+  const requestedWindow = new EvidenceAggregator(20_000)
+  requestedWindow.add({ timestamp: 1000, deepfakeProbability: .6, faceDetected: true })
+  assert.equal(requestedWindow.snapshot(21_000).validFaceFrames, 1, 'A 20-second request retains its early fresh samples')
+  assert.equal(requestedWindow.snapshot(21_000).windowSeconds, 20)
+  assert.equal(requestedWindow.snapshot(21_001).sampleCount, 0)
+  let realCalls = 0
+  const demo = new SentinelSession(() => null, {
+    name: 'real-test', reset() {}, analyzeFrame: async () => { realCalls++; return result }
+  })
+  try {
+    assert.equal(demo.startScriptedDemo().detectorMode, 'demo')
+    assert.equal((await demo.analyzeFrame(frame())).result.model, 'mock-detector')
+    assert.equal(realCalls, 0, 'Scripted demo must never send dummy pixels to the real service')
+    assert.throws(() => demo.setDetectorMode('real'), /Stop monitoring/)
+    assert.equal(demo.stopMonitoring().detectorMode, 'real', 'Stop restores the selected live detector')
+    demo.startMonitoring(source)
+    assert.equal((await demo.analyzeFrame(frame())).result.model, 'test-only')
+    assert.equal(realCalls, 1)
+  } finally {
+    demo.stopMonitoring()
+  }
+
   let resolveFrame!: (value: DetectorResult) => void
   const deferred = new SentinelSession(() => null, {
     name: 'deferred', reset() {},
@@ -25,6 +48,25 @@ async function main() {
   await assert.rejects(oldFrame, /session ended/)
   assert.equal(deferred.getState().samplesAnalyzed, 0)
   deferred.stopMonitoring()
+
+  deferred.startMonitoring(source)
+  try {
+    const capturedBeforeRequest = deferred.analyzeFrame({ ...frame(), capturedAt: Date.now() - 4000 })
+    const sampling = deferred.sampleForChat({ durationSeconds: 2, framesPerSecond: 2 }, new AbortController().signal)
+    resolveFrame(result)
+    await capturedBeforeRequest
+    const report = await sampling as { newSamples: number; freshEvidenceAvailable: boolean; evidence: EvidenceSnapshot }
+    assert.equal(report.newSamples, 0, 'An old frame resolving inside a requested window is not fresh evidence')
+    assert.equal(report.freshEvidenceAvailable, false)
+    assert.equal(report.evidence.sampleCount, 0)
+    const nextSampling = deferred.sampleForChat({ durationSeconds: 2, framesPerSecond: 2 }, new AbortController().signal)
+    const freshFrame = deferred.analyzeFrame(frame())
+    resolveFrame({ ...result, deepfakeProbability: .2 })
+    await freshFrame
+    const freshReport = await nextSampling as typeof report
+    assert.equal(freshReport.newSamples, 1)
+    assert.equal(freshReport.evidence.scores?.mean, .2, 'Requested evidence excludes the earlier rolling window')
+  } finally { deferred.stopMonitoring() }
 
   let receivedRequest!: () => void
   const received = new Promise<void>((resolve) => { receivedRequest = resolve })

@@ -15,7 +15,7 @@ export interface CompatibleAgentConfig {
 
 const AGENT_TIMEOUT_MS = 12_000
 
-function createModel(config: CompatibleAgentConfig): ChatOpenAI {
+export function createModel(config: CompatibleAgentConfig, timeoutMs = AGENT_TIMEOUT_MS, streaming = false): ChatOpenAI {
   const url = new URL(config.baseUrl)
   if (!['https:', 'http:'].includes(url.protocol) || !config.model.trim()) {
     throw new Error('Invalid agent configuration')
@@ -26,9 +26,9 @@ function createModel(config: CompatibleAgentConfig): ChatOpenAI {
     configuration: { baseURL: config.baseUrl },
     useResponsesApi: false,
     streamUsage: false,
-    streaming: false,
+    streaming,
     maxRetries: 0,
-    timeout: AGENT_TIMEOUT_MS
+    timeout: timeoutMs
   })
 }
 
@@ -79,6 +79,7 @@ export async function runSentinelDecision(
     config: CompatibleAgentConfig | null
     signal: AbortSignal
     getHighStreak?: () => number
+    localFallbackReason?: string
     onEvent: (message: string) => void
     onMode: (mode: 'langchain' | 'fallback') => void
   }
@@ -102,7 +103,7 @@ export async function runSentinelDecision(
     return decideWithPersistence(evidence, { ...host, requestAdditionalSampling: requestSampling }, options.getHighStreak?.() ?? highStreak)
   }
 
-  if (!options.config) return fallback('No agent endpoint configured. Using local evidence rules.')
+  if (!options.config) return fallback(options.localFallbackReason ?? 'No agent endpoint configured. Using local evidence rules.')
   if (!shouldInvokeAgent(snapshot) && snapshot.scores && snapshot.scores.mean < 0.35) {
     return fallback('Scores are stable and low. Local rules continue monitoring.')
   }

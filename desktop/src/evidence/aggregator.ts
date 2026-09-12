@@ -12,6 +12,8 @@ export class EvidenceAggregator {
   private samples: EvidenceSample[] = []
   private previousAssessment: AssessmentLevel | null = null
 
+  constructor(private readonly windowMs = WINDOW_MS) {}
+
   reset(): void {
     this.samples = []
     this.previousAssessment = null
@@ -33,7 +35,7 @@ export class EvidenceAggregator {
     const probabilities = valid.map((s) => s.deepfakeProbability)
 
     return {
-      windowSeconds: WINDOW_MS / 1000,
+      windowSeconds: this.windowMs / 1000,
       sampleCount: this.samples.length,
       validFaceFrames: valid.length,
       scores: probabilities.length ? computeStats(probabilities) : null,
@@ -54,7 +56,7 @@ export class EvidenceAggregator {
   }
 
   private prune(now: number): void {
-    const cutoff = now - WINDOW_MS
+    const cutoff = now - this.windowMs
     this.samples = this.samples.filter((s) => s.timestamp >= cutoff)
   }
 }

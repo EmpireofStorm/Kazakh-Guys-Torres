@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CaptureSource, SentinelUiState } from '../shared/types'
+import type { CaptureSource, DetectorHealth, DetectorMode, SentinelUiState } from '../shared/types'
 import { FrameSampler } from './capture/frameSampler'
 import { AgentSettingsPanel } from './AgentSettingsPanel'
+import { MediaAnalysisPanel } from './MediaAnalysisPanel'
+import { ChatPanel } from './ChatPanel'
 
 const idleState: SentinelUiState = {
   phase: 'IDLE',
@@ -15,14 +17,19 @@ const idleState: SentinelUiState = {
   errorMessage: null,
   overlayExpanded: false,
   agentMode: 'fallback',
+  detectorMode: 'real',
   agentActivity: [],
   agentBusy: false
 }
 
 export function App() {
+  const [view, setView] = useState<'chat' | 'live' | 'connection'>('chat')
   const [state, setState] = useState<SentinelUiState>(idleState)
   const [sources, setSources] = useState<CaptureSource[] | null>(null)
   const [busy, setBusy] = useState(false)
+  const [mediaBusy, setMediaBusy] = useState(false)
+  const [health, setHealth] = useState<DetectorHealth | null>(null)
+  const [checkingHealth, setCheckingHealth] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -33,8 +40,13 @@ export function App() {
   useEffect(() => {
     if (!window.sentinel) return
     void window.sentinel.getState().then(setState)
+    void checkHealth()
     return window.sentinel.onState(setState)
   }, [])
+
+  useEffect(() => {
+    if (state.overlayExpanded) setView('live')
+  }, [state.overlayExpanded])
 
   useEffect(() => {
     return () => {
@@ -43,6 +55,35 @@ export function App() {
   }, [])
 
   const riskLabel = useMemo(() => formatRisk(state), [state])
+
+  async function checkHealth() {
+    setCheckingHealth(true)
+    try {
+      const next = await window.sentinel.checkDetectorHealth()
+      setHealth(next)
+      return next
+    } catch {
+      const next: DetectorHealth = { reachable: false, videoReady: false, voiceReady: false, message: 'Could not reach the real detector service.' }
+      setHealth(next)
+      return next
+    } finally {
+      setCheckingHealth(false)
+    }
+  }
+
+  async function changeDetector(mode: DetectorMode) {
+    setBusy(true)
+    setLocalError(null)
+    try {
+      setState(await window.sentinel.setDetectorMode(mode))
+      setSources(null)
+      if (mode === 'real') await checkHealth()
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : 'Could not change detector mode')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function openPicker() {
     setBusy(true)
@@ -61,6 +102,10 @@ export function App() {
     setBusy(true)
     setLocalError(null)
     try {
+      if (state.detectorMode === 'real') {
+        const status = await checkHealth()
+        if (!status.videoReady) throw new Error(status.message)
+      }
       await startPreview(source.id)
       await window.sentinel.startMonitoring(source.id, source.name)
       setSources(null)
@@ -138,24 +183,46 @@ export function App() {
   const bridgeMissing = typeof window.sentinel === 'undefined'
 
   return (
-    <div className="shell">
-      <header className="hero">
+    <div className="shell app-shell">
+      <header className="hero app-header">
         <div className="brand-mark">S</div>
         <div>
-          <p className="eyebrow">Desktop authenticity agent</p>
           <h1>SENTINEL</h1>
-          <p className="tagline">Real-Time Media Authenticity</p>
+          <p className="tagline">Media authenticity workspace</p>
         </div>
+        <nav className="workspace-nav" aria-label="Workspace views">
+          <button aria-pressed={view === 'chat'} onClick={() => setView('chat')}>Chat</button>
+          <button aria-pressed={view === 'live'} onClick={() => setView('live')}>
+            {monitoring && <span className="nav-live-dot" aria-hidden="true" />}Live monitor
+          </button>
+          <button aria-pressed={view === 'connection'} onClick={() => setView('connection')}>Connection</button>
+        </nav>
       </header>
 
+      <div hidden={view !== 'chat'}>
+        <ChatPanel active={view === 'chat'} onOpenConnection={() => setView('connection')} />
+      </div>
+      <div hidden={view !== 'live'}>
       <section className="panel">
+        <div className="detector-controls">
+          <label htmlFor="detector-mode">Meeting detector</label>
+          <select id="detector-mode" value={state.detectorMode} disabled={monitoring || busy || mediaBusy || bridgeMissing}
+            onChange={(event) => void changeDetector(event.target.value as DetectorMode)}>
+            <option value="real">Real detector · UCF</option>
+            <option value="demo">Demo · simulated scores</option>
+          </select>
+          <button className="ghost" disabled={checkingHealth || bridgeMissing} onClick={() => void checkHealth()}>
+            {checkingHealth ? 'Checking…' : 'Check detector service'}
+          </button>
+        </div>
+        {health && <p className="settings-help" role="status">{health.message}</p>}
         <div className="actions">
           {!monitoring && (
             <>
-              <button className="primary" disabled={busy} onClick={() => void openPicker()}>
+              <button className="primary" disabled={busy || mediaBusy || bridgeMissing} onClick={() => void openPicker()}>
                 Select Meeting Window
               </button>
-              <button className="ghost" disabled={busy} onClick={() => void runScriptedDemo()}>
+              <button className="ghost" disabled={busy || mediaBusy || bridgeMissing} onClick={() => void runScriptedDemo()}>
                 Run scripted demo
               </button>
             </>
@@ -180,7 +247,7 @@ export function App() {
                 key={source.id}
                 className="source-card"
                 onClick={() => void chooseSource(source)}
-                disabled={busy}
+                disabled={busy || mediaBusy}
               >
                 <img src={source.thumbnail} alt="" />
                 <span>{source.name}</span>
@@ -227,7 +294,9 @@ export function App() {
           </div>
         </dl>
 
-        <p className="settings-help">Demo mode uses simulated detector scores.</p>
+        <p className="settings-help">{state.detectorMode === 'demo'
+          ? 'Demo mode: scores are simulated and do not analyze the captured pixels.'
+          : 'Real UCF video scores · largest visible face. Meeting audio is not captured; use a saved file to check voice.'}</p>
 
         <section className="agent-activity" aria-labelledby="agent-activity-title">
           <h2 id="agent-activity-title">Agent activity</h2>
@@ -270,7 +339,11 @@ export function App() {
           <p className="error">{localError || state.errorMessage}</p>
         )}
       </section>
+      <MediaAnalysisPanel disabled={monitoring || busy} onBusyChange={setMediaBusy} />
+      </div>
+      <div hidden={view !== 'connection'}>
       <AgentSettingsPanel />
+      </div>
     </div>
   )
 }

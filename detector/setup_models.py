@@ -10,6 +10,11 @@ DEFAULT_MODELS = Path(__file__).resolve().parent / "models"
 UCF_REF = "f188b1c105465e2e5377eb536a95022ae0e4522d"
 AASIST_REF = "a8457bb999b7b6087d238f17604bc4796fcc9fa9"
 AASIST_WEIGHTS = "f0e9f100b670c6bc7e0d373a778e375afeaf057b"
+KNOWN_SHA256 = {
+    "model.safetensors": "a06d43d8d4a7e11b62fb4fa833f13a598fee23be7c368c416df4bec2e44e664f",
+    "ucf_best.pth": "4afa2517feeb473024e1b73049bfa61ce446eb4da14d17c864f2e2a76b3223e5",
+    "shape_predictor_81_face_landmarks.dat": "8cae4375589dd915d9a0a881101bed1bbb4e9887e35e63b024388f1ca25ff869",
+}
 
 
 def assets(video: bool, audio: bool):
@@ -34,7 +39,7 @@ def download(url: str, destination: Path):
     checksum = destination.with_name(destination.name + ".sha256")
     if destination.is_file() and checksum.is_file():
         with destination.open("rb") as stream:
-            if hashlib.file_digest(stream, "sha256").hexdigest() == checksum.read_text().strip():
+            if hashlib.file_digest(stream, "sha256").hexdigest() == KNOWN_SHA256.get(destination.name, checksum.read_text().strip()):
                 print(f"Verified {destination.name}", flush=True)
                 return
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -45,6 +50,8 @@ def download(url: str, destination: Path):
             shutil.copyfileobj(response, output)
         with partial.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if destination.name in KNOWN_SHA256 and digest != KNOWN_SHA256[destination.name]:
+            raise ValueError(f"Checksum mismatch for {destination.name}")
         partial.replace(destination)
         checksum.write_text(digest + "\n")
     finally:

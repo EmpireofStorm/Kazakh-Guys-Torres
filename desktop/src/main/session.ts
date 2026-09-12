@@ -1,9 +1,12 @@
 import { z } from 'zod'
+import { setTimeout as delay } from 'node:timers/promises'
 import type { DesktopCapturerSource } from 'electron'
 import { createDetectorAdapter } from '../detector/factory'
+import { MockDetectorAdapter } from '../detector/MockDetectorAdapter'
 import { EvidenceAggregator } from '../evidence/aggregator'
 import { runSentinelDecision, type CompatibleAgentConfig } from '../agent/langchainAgent'
 import type { AgentToolHost } from '../agent/tools'
+import { additionalSamplingSchema } from '../agent/tools'
 import type { DetectorAdapter } from '../detector/types'
 import type {
   AgentActivity,
@@ -53,13 +56,60 @@ export class SentinelSession {
   private agentActivity: AgentActivity[] = []
   private activityId = 0
   private intensiveFps = INTENSIVE_FPS
+  private scriptedDemo = false
+  private chatBusy = false
+  private chatSampling: { startedAt: number; until: number; count: number; evidence: EvidenceAggregator } | null = null
+  private readonly demoDetector = new MockDetectorAdapter()
 
   private readonly evidence = new EvidenceAggregator()
 
   constructor(
     private readonly getAgentConfig: () => CompatibleAgentConfig | null = () => null,
-    private readonly detector: DetectorAdapter = createDetectorAdapter()
+    private detector: DetectorAdapter = createDetectorAdapter()
   ) {}
+
+  setDetectorMode(raw: unknown): SentinelUiState {
+    const mode = z.enum(['real', 'demo']).parse(raw)
+    if (this.phase === 'MONITORING') throw new Error('Stop monitoring before changing the detector.')
+    this.stopMonitoring()
+    this.detector = createDetectorAdapter(mode)
+    this.emit()
+    return this.getState()
+  }
+
+  setChatBusy(busy: boolean): void {
+    this.chatBusy = busy
+    if (busy) this.cancelInvestigation()
+  }
+
+  async sampleForChat(raw: unknown, signal: AbortSignal): Promise<unknown> {
+    const args = additionalSamplingSchema.parse(raw)
+    signal.throwIfAborted()
+    if (this.phase !== 'MONITORING') throw new Error('Select a meeting window and start monitoring before requesting live samples.')
+    const generation = this.generation
+    if (this.chatSampling) throw new Error('A live evidence window is already running.')
+    const startedAt = Date.now()
+    const sampling = { startedAt, until: startedAt + args.durationSeconds * 1000, count: 0, evidence: new EvidenceAggregator(args.durationSeconds * 1000) }
+    this.chatSampling = sampling
+    const current = () => !signal.aborted && generation === this.generation && this.phase === 'MONITORING'
+    this.createToolHost(current).requestAdditionalSampling(args)
+    const until = this.intensiveUntil
+    this.recordActivity(`Chat requested ${args.durationSeconds} seconds of additional sampling.`)
+    try {
+      await delay(args.durationSeconds * 1000, undefined, { signal })
+      if (!current()) throw new Error('Monitoring ended before the sampling window completed.')
+      return { status: 'completed', newSamples: sampling.count,
+        freshEvidenceAvailable: sampling.count > 0,
+        detectorMode: this.getState().detectorMode, evidence: sampling.evidence.snapshot(sampling.until) }
+    } finally {
+      if (this.chatSampling === sampling) this.chatSampling = null
+      if (generation === this.generation && this.intensiveUntil === until) {
+        this.intensiveUntil = 0
+        this.samplingMode = 'NORMAL'
+        this.emit()
+      }
+    }
+  }
 
   agentSettingsChanged(): void {
     this.cancelInvestigation()
@@ -89,6 +139,7 @@ export class SentinelSession {
       errorMessage: this.errorMessage,
       overlayExpanded: this.overlayExpanded,
       agentMode: this.agentMode,
+      detectorMode: this.scriptedDemo || this.detector.name === 'mock-detector' ? 'demo' : 'real',
       agentBusy: this.agentRun !== null,
       agentActivity: [...this.agentActivity]
     }
@@ -118,7 +169,9 @@ export class SentinelSession {
     this.cancelInvestigation()
     this.stopTicker()
     if (this.watchdog) clearInterval(this.watchdog)
+    this.scriptedDemo = false
     this.detector.reset()
+    this.demoDetector.reset()
     this.evidence.reset()
     this.samplesAnalyzed = 0
     this.highStreak = 0
@@ -149,12 +202,15 @@ export class SentinelSession {
   }
 
   startScriptedDemo(): SentinelUiState {
-    const state = this.startMonitoring({
+    this.startMonitoring({
       sourceId: 'scripted:demo',
       sourceName: 'Scripted demo timeline'
     })
+    this.scriptedDemo = true
+    this.recordActivity('Scripted demo uses simulated scores. Real detector results are not used.')
     this.startTicker()
-    return state
+    this.emit()
+    return this.getState()
   }
 
   stopMonitoring(): SentinelUiState {
@@ -165,11 +221,13 @@ export class SentinelSession {
     if (this.watchdog) clearInterval(this.watchdog)
     this.watchdog = null
     this.phase = 'IDLE'
+    this.scriptedDemo = false
     this.selectedSource = null
     this.samplingMode = 'NORMAL'
     this.assessment = null
     this.overlayExpanded = false
     this.detector.reset()
+    this.demoDetector.reset()
     this.evidence.reset()
     this.recordActivity('Monitoring stopped. Pending investigations were cancelled.')
     this.emit()
@@ -197,7 +255,8 @@ export class SentinelSession {
     const generation = this.generation
     let result: DetectorResult
     try {
-      result = await this.detector.analyzeFrame({
+      const detector = this.scriptedDemo ? this.demoDetector : this.detector
+      result = await detector.analyzeFrame({
         jpegBase64: payload.jpegBase64,
         capturedAt: payload.capturedAt
       }, this.captureAbort.signal)
@@ -221,13 +280,19 @@ export class SentinelSession {
 
     this.samplesAnalyzed += 1
     this.evidence.noteLifetime()
-    this.evidence.add({
+    const sample = {
       timestamp: payload.capturedAt,
       deepfakeProbability: result.deepfakeProbability,
       faceDetected: result.faceDetected,
       confidence: result.confidence,
       model: result.model
-    })
+    }
+    this.evidence.add(sample)
+    const sampling = this.chatSampling
+    if (sampling && payload.capturedAt >= sampling.startedAt && payload.capturedAt <= sampling.until) {
+      sampling.count += 1
+      sampling.evidence.add(sample)
+    }
 
     if (result.faceDetected && result.deepfakeProbability >= 0.75) {
       this.highStreak += 1
@@ -274,7 +339,8 @@ export class SentinelSession {
     const host = this.createToolHost(current)
     // Sampling continues while the model chooses its next action.
     void runSentinelDecision(snapshot, host, this.highStreak, {
-      config: this.getAgentConfig(),
+      config: this.chatBusy ? null : this.getAgentConfig(),
+      localFallbackReason: this.chatBusy ? 'Chat is using the model connection. Local evidence rules continue monitoring.' : undefined,
       getHighStreak: () => this.highStreak,
       signal: run.signal,
       onEvent: (message) => { if (current()) this.recordActivity(message) },

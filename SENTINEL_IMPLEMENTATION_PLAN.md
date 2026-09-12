@@ -15,7 +15,7 @@ This plan is based on the current repository contents. Existing files (`README.m
 | Branch | `main` |
 | History | `d8c3b85` Initial commit → `850fa61` README typos → `8f017bc` Models Overview |
 | Existing files | `README.md` (placeholder), `models_overview.md` (research notes), `LICENSE` (MIT) |
-| Application code | `desktop/` Electron app (phases 1–9 + scripted demo). `detector/server.py` is an HTTP **contract stub**, not UCF. |
+| Application code | `desktop/` Electron app with streaming agent chat, tools, history, and live monitoring. `detector/` runs pretrained UCF and AASIST3 through HTTP or a saved-clip CLI. Live audio capture is pending. |
 
 `models_overview.md` documents **two pretrained detectors** plus fusion:
 
@@ -23,7 +23,10 @@ This plan is based on the current repository contents. Existing files (`README.m
 - **Audio:** AASIST3 (Wav2Vec2 frozen + KAN graph backend). 16 kHz mono, ~4 s clips. Label polarity of the checkpoint is inverted vs the model card (already fixed in research code).
 - **Fusion:** noisy-OR, **user-requested, not automatic**. Voice and video stay separate until combined.
 
-Referenced research paths (`src/audio/model.py`, `src/video/crop.py`, `src/fusion.py`) are **not in this GitHub repository yet**. Detector integration must stay behind `DetectorAdapter` / HTTP and must not invent the Python function signatures.
+The research paths named in the notes were absent. Their equivalents now live in
+`detector/audio.py`, `detector/video.py`, and the explicit `/combine` endpoint.
+The public checkpoints load strictly with pinned upstream code. The benchmark
+metrics in the notes have not been reproduced by this integration.
 
 ---
 
@@ -220,7 +223,9 @@ UI maps `UNCERTAIN` → “VERIFYING…”
 
 **Milestone 1 (in this repo):** phases 1–9 with mock detector, window capture, overlay, evidence, agent tools + fallback.
 
-**Next:** keep FastAPI JSON stable; wrap UCF (video) behind `analyze()` without changing the adapter. Do not auto-fuse AASIST3.
+**Phase 10 implemented:** UCF preserves the frame HTTP contract. AASIST3 is
+available through `/analyze/audio` and the saved-clip CLI. Fusion requires an
+explicit `/combine` call or `--combine` flag. Live audio capture remains pending.
 
 ---
 
@@ -229,8 +234,9 @@ UI maps `UNCERTAIN` → “VERIFYING…”
 - Screen-capture permission / Electron `getUserMedia` constraints on some OS builds
 - Overlay positioning on multi-monitor setups
 - OpenAI key may be missing during the hackathon — fallback orchestrator is required
-- UCF + dlib + DeepfakeBench deps are heavy; keep them in `detector/` later
-- AASIST3 checkpoint label swap must not be forgotten when audio is added
+- UCF + dlib and AASIST3 dependencies and weights stay in `detector/`
+- UCF scores several synthetic talking-head demos low; low scores do not establish authenticity
+- AASIST3 uses class 0 for spoof, covered by the runnable preprocessing check
 - Frame volatility will false-alarm if we ever switch to max-score
 
 ---
@@ -256,3 +262,24 @@ MVP is **desktop-level** on purpose: any meeting app is just a window.
 Later, optional: Zoom/Meet/Teams SDK or companion modes. Those must never replace explicit user-selected capture as the default trust boundary.
 
 Audio path (AASIST3) and noisy-OR fusion stay **opt-in**, matching `models_overview.md`.
+
+## Agent chat implementation
+
+Chat is the default Electron view, with Live monitor and Connection views kept
+mounted. A LangChain tool loop streams replies, analyzes explicitly attached
+files, reads live evidence and detector readiness, and can await one additional
+sampling window while monitoring is active. Executed tools and detector results
+appear in the transcript. Follow-ups reuse previous reports.
+
+An enforced finalization step gathers additional evidence for ambiguous scores,
+low coverage, unavailable channels, disagreement, or declared uncertainty before
+releasing the final answer. Saved media gets distinct frame positions and the
+next audio window; live requests retain only frames captured during that
+request, for its full duration. Unresolved uncertainty remains explicit.
+OpenRouter uses its compatible Chat Completions endpoint with a tool-capable
+model; the Connection view offers a preset and a tool roundtrip test.
+
+Chat history persists locally; media paths and provider keys stay in the main
+process. Only sent attachment IDs are available to tools. Stop, connection
+changes and capture changes cancel the active turn. Combining scores remains an
+explicit UI action. Slack integration is outside the current scope.

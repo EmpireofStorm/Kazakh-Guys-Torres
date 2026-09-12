@@ -10,7 +10,7 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "demo:timeline": "tsx scripts/simulate-demo.ts",
-    "test": "tsx scripts/check-agent.ts && tsx scripts/check-settings.ts && tsx scripts/check-session.ts"
+    "test": "tsx scripts/check-agent.ts && tsx scripts/check-chat-agent.ts && tsx scripts/check-chat-session.ts && tsx scripts/check-settings.ts && tsx scripts/check-session.ts && tsx scripts/check-detector.ts"
   },
   "dependencies": {
     "langchain": "^1.5.11",

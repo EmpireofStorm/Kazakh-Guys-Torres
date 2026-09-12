@@ -16,6 +16,84 @@ export type SamplingMode = 'NORMAL' | 'INTENSIVE'
 
 export type AgentMode = 'langchain' | 'fallback'
 
+export type DetectorMode = 'real' | 'demo'
+
+export interface DetectorHealth {
+  reachable: boolean
+  videoReady: boolean
+  voiceReady: boolean
+  message: string
+}
+
+export interface MediaAnalysis {
+  videoRisk: number | null
+  voiceRisk: number | null
+  framesSampled: number
+  facesFound: number
+  voiceSeconds: number | null
+  additionalEvidence?: boolean
+  voiceStartSeconds?: number
+  errors: { video?: string; audio?: string }
+  calibrated: false
+}
+
+export type MediaAnalysisOutcome =
+  | { status: 'ok'; fileName: string; result: MediaAnalysis }
+  | { status: 'cancelled' }
+  | { status: 'error'; message: string }
+
+export interface ChatAttachment {
+  id: string
+  name: string
+  size: number
+}
+
+export interface ChatToolEvent {
+  id: string
+  name: string
+  status: 'running' | 'complete' | 'error'
+  summary: string
+}
+
+export interface ChatAnalysis {
+  attachmentId: string
+  fileName: string
+  result: MediaAnalysis
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: number
+  status: 'complete' | 'streaming' | 'cancelled' | 'error'
+  attachmentIds: string[]
+  tools: ChatToolEvent[]
+  analyses: ChatAnalysis[]
+}
+
+export interface ChatConversation {
+  id: string
+  title: string
+  updatedAt: number
+  messages: ChatMessage[]
+  attachments: ChatAttachment[]
+}
+
+export interface ChatState {
+  conversations: { id: string; title: string; updatedAt: number }[]
+  activeConversation: ChatConversation
+  busy: boolean
+  configured: boolean
+  model: string | null
+  error: string | null
+}
+
+export interface ChatSendInput {
+  content: string
+  attachmentIds?: string[]
+}
+
 export interface AgentSettings {
   enabled: boolean
   baseUrl: string
@@ -113,6 +191,7 @@ export interface SentinelUiState {
   errorMessage: string | null
   overlayExpanded: boolean
   agentMode: AgentMode
+  detectorMode: DetectorMode
   agentBusy: boolean
   agentActivity: AgentActivity[]
 }

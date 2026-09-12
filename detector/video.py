@@ -45,7 +45,9 @@ def align_face(image_rgb: np.ndarray, landmarks: np.ndarray) -> np.ndarray:
          [33.5493, 92.3655], [62.7299, 92.2041]], dtype=np.float32,
     )
     destination[:, 0] += 8.0
-    destination *= 256 / 112
+    # Preserve upstream's float32 operation order as it affects warp rounding.
+    destination[:, 0] = destination[:, 0] * 256 / 112
+    destination[:, 1] = destination[:, 1] * 256 / 112
     margin = 256 * (1.3 - 1) / 2
     destination += margin
     destination *= 256 / (256 + 2 * margin)

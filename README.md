@@ -1,21 +1,9 @@
-# Kazakh-Guys-Torres
+# SENTINEL
 
-AI Tinkerers Hackathon project — **SENTINEL**
+An Electron app for investigating video and voice authenticity with a
+conversational agent, real detectors, and live meeting evidence.
 
-Standalone desktop agent for real-time media authenticity during video calls.
-It watches a **user-selected** meeting window (not a Zoom/Teams plugin) and
-escalates conservatively: LOW RISK → VERIFYING → HIGH MANIPULATION RISK.
-
-It never claims a person “is fake.”
-
-## What’s in this repo
-
-- `models_overview.md` — video (UCF) and voice (AASIST3) research notes
-- `desktop/` — Electron + TypeScript SENTINEL app
-- `detector/` — FastAPI HTTP contract stub (`POST /analyze`); UCF/AASIST3 not wrapped yet
-- `SENTINEL_IMPLEMENTATION_PLAN.md` — architecture and phases
-
-## Run SENTINEL
+## Start the app
 
 ```bash
 cd desktop
@@ -23,63 +11,122 @@ npm ci
 npm run dev
 ```
 
-1. Configure **Agent connection** as described below.
-2. Click **Select Meeting Window**, or **Run scripted demo**.
-3. Choose a window or screen if you used the picker.
-4. Watch the preview, overlay, and **Agent activity** log.
-5. The mock detector supplies low, fluctuating, then elevated scores. The agent's tools determine its next action; the alert timing can vary.
+The app opens in **Chat**. Open **Connection**, enter your tool-capable model's
+API base URL and model ID, add a key if required, then enable and save the
+connection. The endpoint must support OpenAI-compatible Chat Completions,
+streaming, and function tools. There is no default cloud endpoint.
 
-**Run scripted demo** walks the same path without capture, if Windows
-blocks screen recording.
+For real media analysis, also start the Python service from the repo root:
 
-## LangChain agent connection
+```bash
+detector/.venv/bin/python -m uvicorn server:app --app-dir detector --host 127.0.0.1 --port 8000
+```
 
-SENTINEL runs a LangChain tool-calling agent in Electron's main process.
-It uses your chosen OpenAI-compatible Chat Completions endpoint. There is
-no default cloud endpoint and no OpenAI Platform account setup.
+Both pretrained models and dependencies are installed on this development
+machine. For a fresh checkout, follow [detector setup](detector/README.md).
 
-In **Agent connection**:
+## Agent chat
 
-1. Enter the **Base URL**, including the server's API prefix. For example, `http://localhost:11434/v1`. Do not append `/chat/completions`.
-2. Enter the exact **Model ID** served by that endpoint. The model must support function tools.
-3. Enter an optional **API key**. Keyless local endpoints are supported.
-4. Click **Test connection** to verify a small function-tool roundtrip using the form values. This does not save settings or send meeting data.
-5. Enable **LangChain agent** and click **Save settings**. Changes apply immediately; an investigation using the previous settings is cancelled.
+Attach up to three video or audio files to a message and ask SENTINEL to
+investigate them. For example:
 
-Settings persist on this device in Electron's user-data directory. API keys
-are encrypted using the OS credential service and are never sent back to the
-renderer after saving. Changing the base URL clears the previous key unless
-you enter a replacement. The key field is cleared after saving.
+- "Analyze this clip. What do the video and voice signals suggest?"
+- "Why do those scores disagree?"
+- "Read the live evidence, collect more samples, and reassess."
 
-For initial configuration you can also set `SENTINEL_LLM_BASE_URL`,
-`SENTINEL_LLM_MODEL`, and optionally `SENTINEL_LLM_API_KEY` in the gitignored
-repo-root `.env`. Saved UI settings take precedence. The legacy names
-`OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY` are accepted together;
-an API key alone does not enable a provider. Restart after changing `.env`.
+A LangChain agent chooses tools, reads their results, and continues the
+conversation. It can:
 
-The runtime uses LangChain's [custom base URL support](https://docs.langchain.com/oss/javascript/integrations/chat/openai#custom-urls)
-and [agent tool loop](https://docs.langchain.com/oss/javascript/langchain/agents).
+- Read detector readiness and current live statistics.
+- Run UCF and AASIST3 on files you attached to this conversation.
+- Gather a second set of distinct video frames and a later audio segment when
+  the first result is uncertain, incomplete, or inconsistent.
+- Request a bounded sampling window while monitoring is already active,
+  wait for it, and read the resulting evidence.
 
-## What the agent does
+The transcript streams text and shows executed tools and detector result cards.
+Video and voice remain separate. **Combine scores** is an explicit action
+using the uncalibrated noisy-OR rule. The agent cannot start capture or open
+arbitrary files. Media filenames and tool results are treated as data.
 
-The agent reads recent score statistics, chooses whether to request a bounded
-sampling window, and publishes an assessment. Requested sampling runs while
-the UI remains responsive. Later investigations receive the newly collected
-scores. The activity log records executed tools and outcomes, not hidden reasoning.
+Before publishing a media assessment, the agent checks whether more evidence
+is needed. An uncertain result triggers another evidence pass before the final
+answer. If that pass cannot resolve the uncertainty, the answer must say what
+is still missing. Additional sampling does not make the scores calibrated or
+guarantee a verdict.
 
-- Stable low scores use local rules without an LLM request.
-- An investigation has a 12-second deadline, a six-tool-call budget, and at most one additional sampling request.
-- Requested sampling lasts 2–20 seconds at 1–4 frames per second. The next investigation waits for that window.
-- Code enforces evidence requirements for low/high assessments. Sparse or expired evidence remains uncertain.
-- Stop cancels model/detector requests and prevents late results from changing the session. Endpoint failures are visible and fall back to local evidence rules.
-- Only score summaries go to the LLM endpoint. Raw meeting frames remain on the detector path.
+Each turn has a two-minute deadline, eight evidence tool calls, and up to four
+finalization checks. It can analyze three distinct attachments, retry an initial
+analysis once, gather one distinct additional pass per file, and request one
+extra live sampling window. A saved second-pass report is reused on follow-ups;
+the same fixed samples are not presented as new evidence. Failed tools return
+an error the agent can use to recover.
+Stop cancels the turn and blocks late results. Changing the connection or
+capture session also cancels an active turn.
 
-**Detector integration is still separate:** the default detector is simulated,
-the HTTP service is a contract stub, and live voice analysis is not connected.
-The agent never invents voice evidence or visual artifacts from a risk score.
-The current thresholds are demo rules, not calibrated guarantees.
+The chat layout takes inspiration from [Unsloth Studio's chat interface](https://unsloth.ai/docs/new/studio/chat):
+conversation history, attachments, model switching, and visible tool execution.
+SENTINEL uses its own media tools and the existing compatible model connection.
 
-## Checks
+Chat text, attachment filenames, and score summaries go to your selected model
+endpoint. Raw media goes only to the detector service. Only files sent in a
+message are exposed to the agent; removing a pending attachment excludes it.
+The latest 20 conversations, with up to 40 messages each, persist in Electron's
+user-data directory. API keys are stored separately using OS encryption.
+
+## Live monitoring
+
+In **Live monitor**, choose **Real detector · UCF**, check service readiness,
+then select a meeting window or screen. Capture starts after your selection.
+UCF analyzes the largest detected face and the app aggregates recent scores.
+Live meeting audio is not captured; attach a saved recording to analyze voice.
+
+A background investigation agent can request more samples and publish a
+conservative assessment. Local evidence rules operate without a configured
+model. While chat is active, background assessments use local rules to avoid
+competing model requests. Sparse or expired evidence remains uncertain.
+
+**Run scripted demo** always uses simulated scores without requiring Python
+models or screen capture. It restores the previous real/demo selection on Stop.
+The overlay labels demo mode.
+
+## Connection settings
+
+Use a base URL including the API prefix, such as `http://localhost:11434/v1`.
+Do not append `/chat/completions`. Enter the exact model ID your server exposes.
+Keyless local endpoints work. **Test connection** checks a small function-tool
+roundtrip without sending media or saving the form.
+
+For [OpenRouter](https://openrouter.ai/docs/quickstart), use the **OpenRouter**
+preset (`https://openrouter.ai/api/v1`), your OpenRouter key, and an exact model
+ID that [supports tools](https://openrouter.ai/models?supported_parameters=tools).
+The connection test verifies the selected model's tool roundtrip. Chat also
+requires streaming support.
+
+Settings apply immediately. Keys stay in Electron's main process, are encrypted
+using the OS credential service, and are never returned to the renderer.
+Changing the base URL clears the old key unless you enter a replacement.
+
+Initial configuration can also come from the gitignored repo-root `.env`:
+
+```dotenv
+SENTINEL_LLM_BASE_URL=
+SENTINEL_LLM_MODEL=
+SENTINEL_LLM_API_KEY=
+SENTINEL_DETECTOR=http
+DETECTOR_URL=http://127.0.0.1:8000/analyze
+```
+
+Saved UI settings take precedence. Legacy `OPENAI_BASE_URL`, `OPENAI_MODEL`,
+and `OPENAI_API_KEY` names are accepted together. A key alone does not activate
+a provider. Restart after changing `.env`.
+
+## Validation and limits
+
+The imported [Colab prototype](Hackaton.ipynb) uses the same public detector
+checkpoints and provides no evidence of better fine-tuned weights. SENTINEL
+keeps the current implementation. See the [model comparison](detector/COLAB_COMPARISON.md)
+for checkpoint identities, saved results, and API differences.
 
 ```bash
 cd desktop
@@ -88,21 +135,16 @@ npm run typecheck
 npm run build
 ```
 
-The checks use local test servers. They exercise tool calls, custom URL/model/key
-routing, unavailable endpoints, cancellation, settings persistence, and capture
-lifecycle without contacting an external model provider.
+Checks use local endpoints and cover the streaming tool loop, follow-up context,
+cancellation, scoped attachments, persistent history, settings, file analysis,
+and capture lifecycle. See [detector checks and results](detector/README.md)
+for actual model validation.
 
-## Optional HTTP detector
+UCF gave low scores to several synthetic talking-face samples in this repo.
+That is a checkpoint generalization limitation. Scores are uncalibrated; a low
+score does not prove authenticity. The benchmark figures in
+`models_overview.md` were not reproduced in this integration. SENTINEL cannot
+infer blinking, lip sync, or other visible artifacts from classifier scores.
 
-Keep `SENTINEL_DETECTOR=mock` until the Python service is ready. Then:
-
-```
-SENTINEL_DETECTOR=http
-DETECTOR_URL=http://127.0.0.1:8000/analyze
-```
-
-Run `uvicorn` from `detector/` (see `detector/README.md`).
-
-## License
-
-MIT — see `LICENSE`.
+Code is MIT licensed. Upstream detector source and checkpoints retain their
+own licenses, documented with the downloaded assets.

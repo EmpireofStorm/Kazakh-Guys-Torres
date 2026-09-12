@@ -10,7 +10,7 @@ const detectorResultSchema = z.object({
 })
 
 /**
- * Phase 10 stub. Do not assume the Python model's internal API.
+ * Local UCF detector service. Model loading and preprocessing stay in Python.
  * Contract: POST {jpegBase64} → DetectorResult JSON.
  */
 export class HttpDetectorAdapter implements DetectorAdapter {

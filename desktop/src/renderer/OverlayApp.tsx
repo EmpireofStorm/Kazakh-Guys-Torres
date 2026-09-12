@@ -13,6 +13,7 @@ const idle: SentinelUiState = {
   errorMessage: null,
   overlayExpanded: false,
   agentMode: 'fallback',
+  detectorMode: 'real',
   agentActivity: [],
   agentBusy: false
 }
@@ -34,6 +35,7 @@ export function OverlayApp() {
         <span className="overlay-glyph">{mode.glyph}</span>
         <strong>SENTINEL</strong>
       </header>
+      {state.phase === 'MONITORING' && state.detectorMode === 'demo' && <p className="overlay-sub">SIMULATED DEMO</p>}
       <p className="overlay-title">{mode.title}</p>
       {mode.subtitle && <p className="overlay-sub">{mode.subtitle}</p>}
       {mode.body && <p className="overlay-body-copy">{mode.body}</p>}

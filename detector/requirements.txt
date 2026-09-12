@@ -11,4 +11,6 @@ opencv-python-headless==4.11.0.86
 scikit-image==0.25.2
 dlib==20.0.0
 soundfile==0.13.1
+pillow==12.3.0
 httpx==0.28.1
+python-multipart==0.0.22
