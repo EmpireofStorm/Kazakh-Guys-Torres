@@ -1,8 +1,11 @@
 import { z } from 'zod'
 import type { DesktopCapturerSource } from 'electron'
 import { createDetectorAdapter } from '../detector/factory'
+import { HttpDetectorAdapter } from '../detector/HttpDetectorAdapter'
+import { MockDetectorAdapter } from '../detector/MockDetectorAdapter'
 import { EvidenceAggregator } from '../evidence/aggregator'
 import { runSentinelDecision, type CompatibleAgentConfig } from '../agent/langchainAgent'
+import { decideWithPersistence } from '../agent/orchestrator'
 import type { AgentToolHost } from '../agent/tools'
 import type { DetectorAdapter } from '../detector/types'
 import type {
@@ -11,6 +14,7 @@ import type {
   AppPhase,
   AssessmentLevel,
   CaptureSource,
+  DemoScenario,
   DetectorResult,
   SamplingMode,
   SentinelUiState,
@@ -25,7 +29,12 @@ const analyzePayloadSchema = z.object({
 
 const startPayloadSchema = z.object({
   sourceId: z.string().min(1).max(512),
-  sourceName: z.string().min(1).max(256)
+  sourceName: z.string().min(1).max(256),
+  scenario: z.enum(['synthetic', 'authentic', 'live']).optional()
+})
+
+const demoPayloadSchema = z.object({
+  scenario: z.enum(['synthetic', 'authentic', 'live'])
 })
 
 const NORMAL_FPS = 1.5
@@ -42,6 +51,7 @@ export class SentinelSession {
   private errorMessage: string | null = null
   private overlayExpanded = false
   private highStreak = 0
+  private demoScenario: DemoScenario = 'synthetic'
   private ticker: ReturnType<typeof setTimeout> | null = null
   private watchdog: ReturnType<typeof setInterval> | null = null
   private listeners = new Set<(state: SentinelUiState) => void>()
@@ -53,12 +63,13 @@ export class SentinelSession {
   private agentActivity: AgentActivity[] = []
   private activityId = 0
   private intensiveFps = INTENSIVE_FPS
+  private liveDetector = false
 
   private readonly evidence = new EvidenceAggregator()
 
   constructor(
     private readonly getAgentConfig: () => CompatibleAgentConfig | null = () => null,
-    private readonly detector: DetectorAdapter = createDetectorAdapter()
+    private detector: DetectorAdapter = createDetectorAdapter()
   ) {}
 
   agentSettingsChanged(): void {
@@ -67,6 +78,17 @@ export class SentinelSession {
     this.nextDecisionAt = 0
     this.recordActivity('Agent settings updated. Future investigations will use the saved endpoint.')
     this.emit()
+  }
+
+  private useLiveDetector(live: boolean): void {
+    this.liveDetector = live
+    if (live) {
+      this.detector = new HttpDetectorAdapter()
+      return
+    }
+    const mock = new MockDetectorAdapter()
+    mock.setDemoScenario(this.demoScenario === 'authentic' ? 'authentic' : 'synthetic')
+    this.detector = mock
   }
 
   subscribe(listener: (state: SentinelUiState) => void): () => void {
@@ -90,7 +112,8 @@ export class SentinelSession {
       overlayExpanded: this.overlayExpanded,
       agentMode: this.agentMode,
       agentBusy: this.agentRun !== null,
-      agentActivity: [...this.agentActivity]
+      agentActivity: [...this.agentActivity],
+      demoScenario: this.demoScenario
     }
   }
 
@@ -101,7 +124,7 @@ export class SentinelSession {
     if (this.samplingMode === 'INTENSIVE') {
       this.samplingMode = 'NORMAL'
     }
-    return NORMAL_FPS
+    return this.liveDetector ? NORMAL_FPS : 4
   }
 
   beginSelecting(): void {
@@ -118,6 +141,10 @@ export class SentinelSession {
     this.cancelInvestigation()
     this.stopTicker()
     if (this.watchdog) clearInterval(this.watchdog)
+    this.demoScenario = payload.scenario ?? this.demoScenario
+    if (payload.scenario !== undefined) {
+      this.useLiveDetector(this.demoScenario === 'live')
+    }
     this.detector.reset()
     this.evidence.reset()
     this.samplesAnalyzed = 0
@@ -148,12 +175,14 @@ export class SentinelSession {
     return this.getState()
   }
 
-  startScriptedDemo(): SentinelUiState {
+  startScriptedDemo(raw: unknown): SentinelUiState {
+    const payload = demoPayloadSchema.parse(raw)
     const state = this.startMonitoring({
-      sourceId: 'scripted:demo',
-      sourceName: 'Scripted demo timeline'
+      sourceId: `scripted:${payload.scenario}`,
+      sourceName: 'Primary participant',
+      scenario: payload.scenario
     })
-    this.startTicker()
+    if (payload.scenario !== 'live') this.startTicker()
     return state
   }
 
@@ -264,6 +293,17 @@ export class SentinelSession {
   }
 
   private investigate(): void {
+    if (!this.liveDetector) {
+      const snapshot = this.evidence.snapshot()
+      if (snapshot.sampleCount < 2) return
+      const host = this.createToolHost(() => this.phase === 'MONITORING')
+      try {
+        decideWithPersistence(snapshot, host, this.highStreak)
+      } catch {
+        // session already stopped
+      }
+      return
+    }
     if (this.agentRun || Date.now() < this.nextDecisionAt) return
     const snapshot = this.evidence.snapshot()
     if (snapshot.sampleCount < 3) return
@@ -334,7 +374,9 @@ export class SentinelSession {
   private applyAssessment(level: AssessmentLevel, explanation: string): void {
     this.assessment = { level, explanation, updatedAt: Date.now() }
     this.evidence.setPreviousAssessment(level)
-    if (level !== 'HIGH_RISK') {
+    if (level === 'HIGH_RISK') {
+      this.overlayExpanded = true
+    } else {
       this.overlayExpanded = false
     }
   }

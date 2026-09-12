@@ -2,7 +2,7 @@ import { CONSERVATIVE_COPY } from './instructions'
 import type { AgentToolHost } from './tools'
 import type { AssessmentLevel, EvidenceSnapshot } from '../shared/types'
 
-const HIGH_MEAN = 0.7
+const HIGH_MEAN = 0.62
 const LOW_MEAN = 0.28
 const UNSTABLE_STD = 0.18
 
@@ -38,29 +38,19 @@ export function decideFromEvidence(snapshot: EvidenceSnapshot, host: AgentToolHo
 
   const { mean, stdDev } = stats
   const unstable = stdDev >= UNSTABLE_STD || evidence.trend === 'rising'
-  const persistentlyHigh = mean >= HIGH_MEAN && evidence.validFaceFrames >= 6
+  const persistentlyHigh = mean >= HIGH_MEAN && evidence.validFaceFrames >= 3
   const recoveredHigh =
     evidence.previousAssessment === 'UNCERTAIN' &&
-    mean >= 0.75 &&
-    evidence.validFaceFrames >= 8 &&
-    stdDev < 0.22
+    mean >= 0.62 &&
+    evidence.validFaceFrames >= 4
   const clearlyLow = mean <= LOW_MEAN && stdDev < UNSTABLE_STD && evidence.trend !== 'rising'
 
-  if ((persistentlyHigh && !unstable) || recoveredHigh) {
+  if (persistentlyHigh || recoveredHigh) {
     host.setAssessment({
       level: 'HIGH_RISK',
       explanation: CONSERVATIVE_COPY.HIGH_RISK
     })
     return 'HIGH_RISK'
-  }
-
-  if (persistentlyHigh && unstable) {
-    host.requestAdditionalSampling({ durationSeconds: 8, framesPerSecond: 2.5 })
-    host.setAssessment({
-      level: 'UNCERTAIN',
-      explanation: CONSERVATIVE_COPY.UNCERTAIN
-    })
-    return 'UNCERTAIN'
   }
 
   if (unstable || mean >= 0.4) {
@@ -94,9 +84,9 @@ export function decideWithPersistence(
 ): AssessmentLevel {
   if (
     snapshot.scores &&
-    snapshot.scores.mean >= 0.76 &&
-    highStreak >= 5 &&
-    snapshot.validFaceFrames >= 5
+    snapshot.scores.mean >= 0.62 &&
+    highStreak >= 3 &&
+    snapshot.validFaceFrames >= 3
   ) {
     host.setAssessment({
       level: 'HIGH_RISK',

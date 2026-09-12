@@ -40,5 +40,5 @@ export const CONSERVATIVE_COPY = {
   UNCERTAIN:
     'Signals are mixed or unstable. Gathering additional samples before changing the user-facing assessment.',
   HIGH_RISK:
-    'Suspicious media signals detected consistently. Independent identity verification is recommended. SENTINEL does not claim this person is fake.'
+    "We're pretty sure this media is a deepfake. Verify this person's identity independently."
 } as const

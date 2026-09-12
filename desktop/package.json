@@ -9,7 +9,9 @@
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "demo:timeline": "tsx scripts/simulate-demo.ts",
+    "demo:timeline": "npx --yes tsx scripts/simulate-demo.ts",
+    "demo:synthetic": "npx --yes tsx scripts/demo-synthetic.ts",
+    "demo:authentic": "npx --yes tsx scripts/demo-authentic.ts",
     "test": "tsx scripts/check-agent.ts && tsx scripts/check-settings.ts && tsx scripts/check-session.ts"
   },
   "dependencies": {

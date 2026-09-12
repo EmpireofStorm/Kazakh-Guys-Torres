@@ -1,16 +1,32 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { SentinelPreloadApi } from '../shared/api'
-import type { CaptureSource, SentinelUiState } from '../shared/types'
+import type {
+  AgentConnectionTestResult,
+  AgentSettings,
+  AgentSettingsInput,
+  AgentSettingsResult,
+  CaptureSource,
+  DemoClip,
+  DemoScenario,
+  SentinelUiState
+} from '../shared/types'
 
 const api: SentinelPreloadApi = {
-  getAgentSettings: () => ipcRenderer.invoke(IPC.agentSettingsGet),
-  saveAgentSettings: (input) => ipcRenderer.invoke(IPC.agentSettingsSave, input),
-  testAgentConnection: (input) => ipcRenderer.invoke(IPC.agentConnectionTest, input),
+  getAgentSettings: (): Promise<AgentSettings> => ipcRenderer.invoke(IPC.agentSettingsGet),
+  saveAgentSettings: (input: AgentSettingsInput): Promise<AgentSettingsResult> =>
+    ipcRenderer.invoke(IPC.agentSettingsSave, input),
+  testAgentConnection: (input: AgentSettingsInput): Promise<AgentConnectionTestResult> =>
+    ipcRenderer.invoke(IPC.agentConnectionTest, input),
   listSources: (): Promise<CaptureSource[]> => ipcRenderer.invoke(IPC.sourcesList),
-  startMonitoring: (sourceId: string, sourceName: string): Promise<SentinelUiState> =>
-    ipcRenderer.invoke(IPC.monitorStart, { sourceId, sourceName }),
-  startScriptedDemo: (): Promise<SentinelUiState> => ipcRenderer.invoke(IPC.demoStart),
+  listDemoClips: (): Promise<DemoClip[]> => ipcRenderer.invoke(IPC.clipsList),
+  startMonitoring: (
+    sourceId: string,
+    sourceName: string,
+    scenario?: DemoScenario
+  ): Promise<SentinelUiState> => ipcRenderer.invoke(IPC.monitorStart, { sourceId, sourceName, scenario }),
+  startScriptedDemo: (scenario: DemoScenario): Promise<SentinelUiState> =>
+    ipcRenderer.invoke(IPC.demoStart, { scenario }),
   stopMonitoring: (): Promise<SentinelUiState> => ipcRenderer.invoke(IPC.monitorStop),
   analyzeFrame: (jpegBase64: string, capturedAt: number) =>
     ipcRenderer.invoke(IPC.detectorAnalyze, { jpegBase64, capturedAt }),
@@ -20,6 +36,11 @@ const api: SentinelPreloadApi = {
     const listener = (_event: unknown, state: SentinelUiState) => callback(state)
     ipcRenderer.on(IPC.stateUpdate, listener)
     return () => ipcRenderer.removeListener(IPC.stateUpdate, listener)
+  },
+  onDemoHotkey: (callback: (scenario: DemoScenario) => void): (() => void) => {
+    const listener = (_event: unknown, scenario: DemoScenario) => callback(scenario)
+    ipcRenderer.on(IPC.demoHotkey, listener)
+    return () => ipcRenderer.removeListener(IPC.demoHotkey, listener)
   }
 }
 

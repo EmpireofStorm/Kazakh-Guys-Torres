@@ -48,6 +48,14 @@ export interface AgentActivity {
   message: string
 }
 
+export type DemoScenario = 'synthetic' | 'authentic' | 'live'
+
+export interface DemoClip {
+  id: string
+  name: string
+  url: string
+}
+
 export interface DetectorResult {
   deepfakeProbability: number
   faceDetected: boolean
@@ -115,6 +123,7 @@ export interface SentinelUiState {
   agentMode: AgentMode
   agentBusy: boolean
   agentActivity: AgentActivity[]
+  demoScenario: DemoScenario
 }
 
 export function toDisplayState(

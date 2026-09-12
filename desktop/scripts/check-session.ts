@@ -13,7 +13,8 @@ const source = { sourceId: 'test:window', sourceName: 'Test window' }
 async function main() {
   let resolveFrame!: (value: DetectorResult) => void
   const deferred = new SentinelSession(() => null, {
-    name: 'deferred', reset() {},
+    name: 'deferred',     reset() {},
+    setDemoScenario() {},
     analyzeFrame: () => new Promise((resolve) => { resolveFrame = resolve })
   })
   deferred.startMonitoring(source)
@@ -41,7 +42,7 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${(endpoint.address() as AddressInfo).port}`
   const session = new SentinelSession(
     () => ({ baseUrl: `${baseUrl}/v1`, model: 'local-test-model', apiKey: '' }),
-    { name: 'test', reset() {}, analyzeFrame: async () => result }
+    { name: 'test', reset() {}, setDemoScenario() {}, analyzeFrame: async () => result }
   )
   try {
     await assert.rejects(new HttpDetectorAdapter(`${baseUrl}/invalid-detector`).analyzeFrame(frame()), /deepfakeProbability/)

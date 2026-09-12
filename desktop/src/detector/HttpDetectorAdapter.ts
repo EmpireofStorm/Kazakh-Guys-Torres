@@ -1,6 +1,7 @@
 import type { DetectorResult, FrameInput } from '../shared/types'
 import type { DetectorAdapter } from './types'
 import { z } from 'zod'
+import type { DemoScenario } from '../shared/types'
 
 const detectorResultSchema = z.object({
   deepfakeProbability: z.number().finite().min(0).max(1),
@@ -10,7 +11,7 @@ const detectorResultSchema = z.object({
 })
 
 /**
- * Phase 10 stub. Do not assume the Python model's internal API.
+ * Calls the team detector over HTTP. Do not assume Python internals.
  * Contract: POST {jpegBase64} → DetectorResult JSON.
  */
 export class HttpDetectorAdapter implements DetectorAdapter {
@@ -21,6 +22,8 @@ export class HttpDetectorAdapter implements DetectorAdapter {
   ) {}
 
   reset(): void {}
+
+  setDemoScenario(_scenario: DemoScenario): void {}
 
   async analyzeFrame(frame: FrameInput, signal?: AbortSignal): Promise<DetectorResult> {
     const response = await fetch(this.endpoint, {

@@ -13,7 +13,7 @@ It never claims a person “is fake.”
 - `models_overview.md` — video (UCF) and voice (AASIST3) research notes
 - `desktop/` — Electron + TypeScript SENTINEL app
 - `detector/` — FastAPI HTTP contract stub (`POST /analyze`); UCF/AASIST3 not wrapped yet
-- `SENTINEL_IMPLEMENTATION_PLAN.md` — architecture and phases
+- `deepfake videos/` — VASA-1 / SadTalker sample clips for the live demo
 
 ## Run SENTINEL
 
@@ -23,14 +23,36 @@ npm ci
 npm run dev
 ```
 
-1. Configure **Agent connection** as described below.
-2. Click **Select Meeting Window**, or **Run scripted demo**.
-3. Choose a window or screen if you used the picker.
-4. Watch the preview, overlay, and **Agent activity** log.
-5. The mock detector supplies low, fluctuating, then elevated scores. The agent's tools determine its next action; the alert timing can vary.
+1. In the repo-root `.env` file (any text editor), set:
 
-**Run scripted demo** walks the same path without capture, if Windows
-blocks screen recording.
+```
+SENTINEL_DETECTOR=http
+DETECTOR_URL=https://overtime-lying-musky.ngrok-free.dev/analyze
+```
+
+Keep your LLM key settings as they are. **Restart** `npm run dev` after saving `.env`.
+
+2. Configure **Agent connection** in the app if you want LangChain on the live path.
+3. Click **Select Meeting Window** (uses the live HTTP detector) or use presenter shortcuts.
+4. Watch the preview, overlay, and **Agent activity** log.
+
+### Presenter shortcuts (not shown in the UI)
+
+Focus the SENTINEL window or overlay, then:
+
+- `Ctrl+Shift+1` — fake test 1: HIGH path in ~3–5 seconds + popup
+- `Ctrl+Shift+2` — fake test 2: stays LOW RISK
+- `Ctrl+Shift+3` — **actual model** via `DETECTOR_URL` (ngrok/HTTP) + LangChain when configured
+
+If a meeting window is already captured, 1/2 switch the scripted score path and 3 switches to the live HTTP detector. Otherwise 1–3 quietly play a sample from `deepfake videos/`.
+
+Headless checks:
+
+```bash
+cd desktop
+npm run demo:synthetic
+npm run demo:authentic
+```
 
 ## LangChain agent connection
 

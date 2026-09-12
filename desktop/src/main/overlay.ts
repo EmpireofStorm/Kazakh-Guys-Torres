@@ -58,8 +58,8 @@ export function resizeOverlay(win: BrowserWindow, expanded: boolean): void {
   if (win.isDestroyed()) return
   const [x, y] = win.getPosition()
   const [, currentH] = win.getSize()
-  const nextW = expanded ? 320 : 280
-  const nextH = expanded ? 268 : 148
+  const nextW = expanded ? 340 : 280
+  const nextH = expanded ? 236 : 148
   const deltaH = nextH - currentH
   win.setSize(nextW, nextH)
   win.setPosition(x, Math.max(0, y - deltaH))

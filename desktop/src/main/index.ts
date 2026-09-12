@@ -1,13 +1,30 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, safeStorage, session } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, net, protocol, safeStorage, session } from 'electron'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { IPC } from '../shared/ipc'
+import { listDemoClips, resolveDemoClipFile } from './clips'
 import { loadSentinelEnv } from './env'
+import { configureNotifications, notifyAssessment } from './notify'
 import { createOverlayWindow, resizeOverlay } from './overlay'
 import { mapDesktopSources, SentinelSession } from './session'
 import { AgentSettingsStore } from './agentSettings'
 import { testAgentConnection } from '../agent/langchainAgent'
 
 loadSentinelEnv()
+configureNotifications()
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'sentinel',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true
+    }
+  }
+])
 
 const isDev = !app.isPackaged
 let agentSettings: AgentSettingsStore
@@ -58,6 +75,24 @@ function createMainWindow(): BrowserWindow {
   return win
 }
 
+function attachPresenterHotkeys(win: BrowserWindow): void {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !input.control || !input.shift) return
+    if (input.code === 'Digit1') {
+      event.preventDefault()
+      mainWindow?.webContents.send(IPC.demoHotkey, 'synthetic')
+    }
+    if (input.code === 'Digit2') {
+      event.preventDefault()
+      mainWindow?.webContents.send(IPC.demoHotkey, 'authentic')
+    }
+    if (input.code === 'Digit3') {
+      event.preventDefault()
+      mainWindow?.webContents.send(IPC.demoHotkey, 'live')
+    }
+  })
+}
+
 function broadcast(state: ReturnType<SentinelSession['getState']>): void {
   for (const win of [mainWindow, overlayWindow]) {
     if (win && !win.isDestroyed()) {
@@ -65,8 +100,10 @@ function broadcast(state: ReturnType<SentinelSession['getState']>): void {
     }
   }
   if (overlayWindow && !overlayWindow.isDestroyed()) {
-    resizeOverlay(overlayWindow, state.overlayExpanded && state.displayState === 'HIGH_RISK')
+    resizeOverlay(overlayWindow, state.displayState === 'HIGH_RISK')
+    if (state.displayState === 'HIGH_RISK') overlayWindow.showInactive()
   }
+  notifyAssessment(state.displayState)
 }
 
 function registerIpc(): void {
@@ -118,7 +155,8 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IPC.monitorStart, (_event, payload: unknown) => sentinel.startMonitoring(payload))
-  ipcMain.handle(IPC.demoStart, () => sentinel.startScriptedDemo())
+  ipcMain.handle(IPC.demoStart, (_event, payload: unknown) => sentinel.startScriptedDemo(payload))
+  ipcMain.handle(IPC.clipsList, () => listDemoClips())
   ipcMain.handle(IPC.monitorStop, () => sentinel.stopMonitoring())
   ipcMain.handle(IPC.detectorAnalyze, (_event, payload: unknown) => sentinel.analyzeFrame(payload))
   ipcMain.handle(IPC.stateGet, () => sentinel.getState())
@@ -138,6 +176,16 @@ function registerIpc(): void {
 
 app.whenReady().then(() => {
   agentSettings = new AgentSettingsStore(join(app.getPath('userData'), 'agent-settings.json'), safeStorage)
+  protocol.handle('sentinel', (request) => {
+    const url = new URL(request.url)
+    const fileName = decodeURIComponent(url.pathname.replace(/^\//, ''))
+    const file = resolveDemoClipFile(fileName)
+    if (!file) {
+      return new Response('Not found', { status: 404 })
+    }
+    return net.fetch(pathToFileURL(file).href)
+  })
+
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === 'media' || permission === 'display-capture')
   })
@@ -145,6 +193,8 @@ app.whenReady().then(() => {
   registerIpc()
   mainWindow = createMainWindow()
   overlayWindow = createOverlayWindow()
+  attachPresenterHotkeys(mainWindow)
+  attachPresenterHotkeys(overlayWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

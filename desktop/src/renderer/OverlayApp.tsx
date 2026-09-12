@@ -14,7 +14,8 @@ const idle: SentinelUiState = {
   overlayExpanded: false,
   agentMode: 'fallback',
   agentActivity: [],
-  agentBusy: false
+  agentBusy: false,
+  demoScenario: 'synthetic'
 }
 
 export function OverlayApp() {
@@ -61,8 +62,8 @@ function overlayMode(state: SentinelUiState): {
     return {
       tone: 'high',
       glyph: '⚠',
-      title: 'HIGH MANIPULATION RISK',
-      subtitle: 'Suspicious media signals detected consistently.',
+      title: "WE'RE PRETTY SURE THIS IS A DEEPFAKE",
+      subtitle: 'High manipulation risk on this media.',
       body: 'Verify this person’s identity independently.',
       showDetails: true
     }

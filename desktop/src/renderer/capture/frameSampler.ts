@@ -19,7 +19,7 @@ export class FrameSampler {
     const generation = this.generation
     const tick = async () => {
       if (generation !== this.generation) return
-      const fps = Math.min(4, Math.max(1, getFps()))
+      const fps = Math.min(5, Math.max(1, getFps()))
       try {
         await this.capture()
       } catch {
