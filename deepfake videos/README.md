@@ -1,5 +1,19 @@
 # Deepfake video samples
 
+## Generated webcam clip
+
+[`ltx23_realistic_webcam_speaker.mp4`](ltx23_realistic_webcam_speaker.mp4) was generated on 2026-09-12 using the [official LTX-2.3 Distilled demo](https://huggingface.co/spaces/Lightricks/LTX-2-3). It shows a fictional adult speaking to camera. Both the picture and speech are AI-generated; no real person's portrait or voice was supplied.
+
+- Generation: 8 seconds, 1536 × 1024, high resolution enabled, prompt enhancement disabled, seed `1780468794`.
+- Saved clip: 864 × 736, 24 fps, H.264 video with the original AAC stereo audio. The render was cropped with `crop=864:736:290:104` to remove its generated laptop frame and garbled captions. No face retouching or audio replacement was applied.
+- Intended dialogue: “Hi, thanks for joining. I have the project update ready. Let me walk you through it.” This records the prompt, not a verified transcription.
+- Labels for testing: **generated video**, **generated audio**. Visual realism and detector accuracy have not been measured.
+- Verification: the saved clip's video and audio decoded in full without FFmpeg errors; frames sampled every half-second were inspected after cropping.
+
+The prompt requested an ordinary home-office camera recording, a fictional man in a grey shirt, natural skin texture, side-window lighting, subtle blinks and head movement, and conversational speech. The model added the unwanted frame and captions despite instructions to omit them; those areas are outside the saved crop. A second generation was blocked by the demo's daily quota.
+
+## Downloaded research demos
+
 Downloaded on 2026-09-12 from the authors' public research demonstration pages. Files are unchanged apart from descriptive filenames.
 
 | File | Duration | Content | Original download |
