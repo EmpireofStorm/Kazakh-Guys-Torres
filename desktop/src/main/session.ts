@@ -231,14 +231,16 @@ export class SentinelSession {
         capturedAt: payload.capturedAt
       }, this.captureAbort.signal)
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      console.error(`[SENTINEL] analyzeFrame failed: ${detail}`)
       if (generation === this.generation && this.phase === 'MONITORING') {
         this.cancelInvestigation()
         this.errorMessage = 'The detector is unavailable. Waiting for a successful analysis.'
         this.applyAssessment('UNCERTAIN', this.errorMessage)
-        this.recordActivity('Detector request failed. No risk score was inferred from the failure.')
+        this.recordActivity(`Detector request failed (${detail}). No risk score was inferred from the failure.`)
         this.emit()
       }
-      throw error
+      throw new Error(detail)
     }
     if (generation !== this.generation || this.phase !== 'MONITORING') {
       throw new Error('Capture session ended')

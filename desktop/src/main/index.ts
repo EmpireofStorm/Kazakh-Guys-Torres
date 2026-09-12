@@ -60,7 +60,14 @@ function createMainWindow(): BrowserWindow {
     }
   })
 
-  win.on('ready-to-show', () => win.show())
+  win.on('ready-to-show', () => {
+    win.show()
+    if (isDev) win.webContents.openDevTools({ mode: 'detach' })
+  })
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const tag = ['log', 'warn', 'error'][level] ?? 'log'
+    console.log(`[renderer:${tag}] ${message} (${sourceId}:${line})`)
+  })
   win.on('closed', () => {
     connectionTest?.abort()
     sentinel.stopMonitoring()
@@ -191,6 +198,9 @@ app.whenReady().then(() => {
   })
 
   registerIpc()
+  console.log(
+    `[SENTINEL] SENTINEL_DETECTOR=${process.env.SENTINEL_DETECTOR ?? '(unset)'} DETECTOR_URL=${process.env.DETECTOR_URL ?? '(unset)'}`
+  )
   mainWindow = createMainWindow()
   overlayWindow = createOverlayWindow()
   attachPresenterHotkeys(mainWindow)

@@ -6,8 +6,8 @@ import type { DemoScenario } from '../shared/types'
 const detectorResultSchema = z.object({
   deepfakeProbability: z.number().finite().min(0).max(1),
   faceDetected: z.boolean(),
-  confidence: z.number().finite().min(0).max(1).optional(),
-  model: z.string().max(128).optional()
+  confidence: z.number().finite().min(0).max(1).nullish(),
+  model: z.string().max(128).nullish()
 })
 
 /**
@@ -37,14 +37,22 @@ export class HttpDetectorAdapter implements DetectorAdapter {
     })
 
     if (!response.ok) {
+      const detail = (await response.text()).slice(0, 400)
+      console.error(`[SENTINEL] detector HTTP ${response.status} from ${this.endpoint}: ${detail}`)
       throw new Error(`Detector HTTP ${response.status}`)
     }
 
-    const body = detectorResultSchema.parse(await response.json())
+    const raw: unknown = await response.json()
+    const parsed = detectorResultSchema.safeParse(raw)
+    if (!parsed.success) {
+      console.error('[SENTINEL] detector JSON rejected', parsed.error.flatten(), raw)
+      throw new Error('Detector response did not match the analyze contract')
+    }
+    const body = parsed.data
     return {
       deepfakeProbability: body.deepfakeProbability,
       faceDetected: body.faceDetected,
-      confidence: body.confidence,
+      confidence: body.confidence ?? undefined,
       model: body.model ?? this.name
     }
   }
